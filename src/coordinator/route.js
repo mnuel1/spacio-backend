@@ -1,7 +1,8 @@
 const express = require('express')
+const { getRooms } = require("../coordinator/roomController")
 
-const coordinatorRouter = express.Router()
+const router = express.Router()
 
+router.get("/rooms", getRooms)
 
-
-module.exports = coordinatorRouter
+module.exports = router

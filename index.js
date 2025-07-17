@@ -1,13 +1,14 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import studentRouter from './src/student/route';
-import facultyRouter from './src/faculty/route';
-import coordinatorRouter from './src/coordinator/route';
+const express = require('express');
+const dotenv = require('dotenv');
+
+const studentRouter = require('./src/student/route');
+const facultyRouter = require('./src/faculty/route');
+const coordinatorRouter = require('./src/coordinator/route');
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 
 app.use(express.json());
 
