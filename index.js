@@ -4,7 +4,7 @@ const dotenv = require('dotenv');
 const studentRouter = require('./src/student/route');
 const facultyRouter = require('./src/faculty/route');
 const coordinatorRouter = require('./src/coordinator/route');
-
+const mmData = require('./src/mmdata/route');
 dotenv.config();
 
 const app = express();
@@ -16,6 +16,7 @@ app.use(express.json());
 app.use('/student', studentRouter);
 app.use('/faculty', facultyRouter);
 app.use('/coordinator', coordinatorRouter);
+app.use('/mdata', mmData);
 
 app.get('/', (req, res) => {
   res.send('Hello from Express with Supabase!');
