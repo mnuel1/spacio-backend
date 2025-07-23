@@ -23,7 +23,7 @@ const getSchedule = async (req, res) => {
       .select(getSchedulesQuery);
 
     if (error) throw error;
-
+    // PENDING!
     return res.status(200).json({
       title: 'Success',
       message: 'Schedules retrieved successfully.',

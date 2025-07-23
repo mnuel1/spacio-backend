@@ -24,8 +24,16 @@ const {
     addSubject,
     removeSubject,
     reassignSubject,
-    runAutoSchedule
+    runAutoSchedule,
+    getConflicts,
+    updateConflict
 } = require("../coordinator/loadController")
+
+const {
+    getUsers,
+    deactivateUser,
+    deleteUser
+} = require("../coordinator/userController")
 
 const router = express.Router()
 
@@ -51,6 +59,13 @@ router.put("/load/remove/subject", removeSubject)
 router.delete("/load/reassign/subject", reassignSubject)
 router.get("/load", getLoad)
 
+router.get("/conflicts", getConflicts)
+router.put("/conflicts/:id", updateConflict)
+
 router.post("/auto/schedule", runAutoSchedule)
+
+router.get("/users", getUsers)
+router.put("/users/deactivate/:id", deactivateUser)
+router.delete("/users/:id", deleteUser)
 
 module.exports = router

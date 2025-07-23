@@ -1,6 +1,10 @@
 const supabase = require("../../supabase");
 const getLoadQuery = require("../queries/coordinator").getLoadQuery;
-const parseAvailableDays = require('../utils.js').parseAvailableDays;
+const {
+  parseAvailableDays,
+  toMinutes,
+  overlap
+} = require('../utils.js');
 
 const getLoad = async (req, res) => {
   try {
@@ -219,132 +223,33 @@ const reassignSubject = async (req, res) => {
   }
 }
 
-const instructors = [
-  {
-    name: "Dr. Maria Smith",
-    role: "Instructor",
-    maxLoad: 18,
-    canTeach: ["ENG101", "ENG102"],
-    timePref: { start: "09:00", end: "13:00" },
-    dayPref: ["Monday", "Wednesday", "Friday"]
-  },
-  {
-    name: "Prof. Alan Grant",
-    role: "Asst. Prof.",
-    maxLoad: 15,
-    canTeach: ["CSE201", "CSE202"],
-    timePref: { start: "10:00", end: "16:00" },
-    dayPref: ["Tuesday", "Thursday"]
-  },
-  {
-    name: "Dr. Sarah Johnson",
-    role: "Assoc. Prof.",
-    maxLoad: 12,
-    canTeach: ["MTH101", "STA102"],
-    timePref: { start: "08:00", end: "12:00" },
-    dayPref: ["Monday", "Tuesday", "Thursday"]
-  },
-  {
-    name: "Prof. Michael Lee",
-    role: "Prof.",
-    maxLoad: 9,
-    canTeach: ["PHY101", "PHY202"],
-    timePref: { start: "13:00", end: "17:00" },
-    dayPref: ["Wednesday", "Friday"]
-  },
-  {
-    name: "Dr. Rachel Evans",
-    role: "Instructor",
-    maxLoad: 18,
-    canTeach: ["BIO101", "BIO102"],
-    timePref: { start: "09:00", end: "12:00" },
-    dayPref: ["Monday", "Thursday"]
-  },
-  {
-    name: "Prof. Kevin Patel",
-    role: "Asst. Prof.",
-    maxLoad: 15,
-    canTeach: ["CSE202", "CSE203"],
-    timePref: { start: "11:00", end: "15:00" },
-    dayPref: ["Tuesday", "Friday"]
-  },
-  {
-    name: "Dr. Linda Kim",
-    role: "Assoc. Prof.",
-    maxLoad: 12,
-    canTeach: ["STA102", "MTH101"],
-    timePref: { start: "08:00", end: "12:00" },
-    dayPref: ["Wednesday", "Friday"]
-  },
-  {
-    name: "Prof. James Nolan",
-    role: "Prof.",
-    maxLoad: 9,
-    canTeach: ["PHY202", "AST101"],
-    timePref: { start: "14:00", end: "18:00" },
-    dayPref: ["Monday", "Thursday"]
-  },
-  {
-    name: "Dr. Emily Zhao",
-    role: "Asst. Prof.",
-    maxLoad: 15,
-    canTeach: ["ENG101", "ENG103"],
-    timePref: { start: "10:00", end: "14:00" },
-    dayPref: ["Tuesday", "Friday"]
-  },
-  {
-    name: "Dr. John Stewart",
-    role: "Instructor",
-    maxLoad: 18,
-    canTeach: ["BIO101", "CHE101"],
-    timePref: { start: "09:00", end: "13:00" },
-    dayPref: ["Wednesday", "Thursday"]
-  }
-];
+// const instructors = [
+//   {
+//     name: "Dr. Maria Smith",
+//     role: "Instructor",
+//     maxLoad: 18,
+//     canTeach: ["ENG101", "ENG102"],
+//     timePref: { start: "09:00", end: "13:00" },
+//     dayPref: ["Monday", "Wednesday", "Friday"]
+//   }
+// ];
 
 
-const subjects = [
-  {
-    name: "ENG101",
-    schedule: { day: "Monday", start: "09:00", end: "10:30", section: "A" },
-    load: 3
-  },
-  {
-    name: "ENG101",
-    schedule: { day: "Monday", start: "09:00", end: "10:30", section: "A" }, // same section, same time
-    load: 3
-  },
-  {
-    name: "CSE202",
-    schedule: { day: "Tuesday", start: "10:00", end: "12:00", section: "B" },
-    load: 4
-  },
-  {
-    name: "CSE202",
-    schedule: { day: "Tuesday", start: "10:30", end: "12:30", section: "B" }, // overlaps
-    load: 4
-  },
-  {
-    name: "BIO101",
-    schedule: { day: "Monday", start: "10:00", end: "11:30", section: "A" }, // will likely cause instructor overload
-    load: 5
-  }
-];
+// const subjects = [
+//   {
+//     name: "ENG101",
+//     schedule: { day: "Tuesday", start: "09:00", end: "10:30", section: "A" },
+//     load: 3
+//   },
+// ];
 
-
-const rooms = ["Room A", "Room B", "Room C"]
-function toMinutes(timeStr) {
-  const [h, m] = timeStr.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function overlap(a, b) {
-  return toMinutes(a.start) < toMinutes(b.end) && toMinutes(b.start) < toMinutes(a.end);
-}
+// const rooms = [
+//   { id: "R101", capacity: 30 },
+// ]
 
 
 const runAutoSchedule = async (req, res) => {
-  const maxExcessLoad = 12
+  
   const schedule = {};
   const loadMap = {};
   const roomBookings = {}; // { "Monday": [ { start, end, room } ] }
@@ -432,6 +337,47 @@ const runAutoSchedule = async (req, res) => {
     }
   }
 
+  // Conflict Analysis and Tagging
+  const conflictAnalysis = conflictNarratives.map(narrative => {
+    let tag = 'Other';
+    let title = 'Scheduling Issue';
+    let severity = 'Low';
+    let affected = 1;
+
+    if (narrative.includes('has a schedule conflict')) {
+      tag = 'Time Conflict';
+      title = 'Instructor Time Overlap';
+      severity = 'High';
+    } else if (narrative.includes('unavailable on')) {
+      tag = 'Day Conflict';
+      title = 'Unavailable on Assigned Day';
+      severity = 'Medium';
+    } else if (narrative.includes('unavailable at')) {
+      tag = 'Time Preference Conflict';
+      title = 'Outside Preferred Time';
+      severity = 'Medium';
+    } else if (narrative.includes('due to max load')) {
+      tag = 'Overload Conflict';
+      title = 'Exceeds Max Load';
+      severity = 'High';
+    } else if (narrative.includes('No available room')) {
+      tag = 'Room Conflict';
+      title = 'No Room Available';
+      severity = 'High';
+    } else if (narrative.includes('Could not assign')) {
+      tag = 'Unassigned';
+      title = 'Subject Unassigned';
+      severity = 'High';
+    }
+
+    return {
+      tag,
+      title,
+      description: narrative,
+      severity,
+      affectedSchedules: affected
+    };
+  });
 
   return res.status(200).json({
     title: 'Success',
@@ -442,9 +388,61 @@ const runAutoSchedule = async (req, res) => {
       totalExcess,
       unassigned,
       roomBookings,
-      conflictNarratives
+      conflictNarratives,
+      diagnostics: conflictAnalysis
     }
   });
+}
+
+const getConflicts = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('conflicts')
+      .select("*");
+
+    if (error) throw error;
+
+    return res.status(200).json({
+      title: 'Success',
+      message: 'Conflicts retrieved successfully.',
+      data: data
+    });
+  } catch (error) {
+    console.error('Error retrieving conflicts:', error.message);
+    return res.status(500).json({
+      title: 'Failed',
+      message: 'Something went wrong!',
+      data: null
+    });
+  }
+}
+
+const updateConflict = async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  try {
+    const { data, error } = await supabase
+      .from('conflicts')
+      .update({ status })
+      .eq('id', id)
+      .select();
+
+    if (error) throw error;
+
+    return res.status(200).json({
+      title: 'Success',
+      message: 'Conflict updated successfully.',
+      data: data[0]
+    });
+  } catch (error) {
+    console.error('Error updating conflict:', error.message);
+    return res.status(500).json({
+      title: 'Failed',
+      message: 'Something went wrong!',
+      data: null
+    });
+  }
 }
 
 module.exports = {
@@ -452,5 +450,7 @@ module.exports = {
   addSubject,
   removeSubject,
   reassignSubject,
-  runAutoSchedule
+  runAutoSchedule,
+  getConflicts,
+  updateConflict
 };

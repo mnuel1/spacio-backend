@@ -132,3 +132,32 @@ export const getLoadQuery = `
     id, room_id, room_title, room_desc, status, floor
   )
 `;
+
+export const getUsersQuery = `
+  id,
+  user_id,
+  role,
+  name,
+  email,
+  phone,
+  birthdate,
+  gender,
+  civil_status
+  address,
+  profile_image,
+  status,
+  created_at
+  teacher_profile:teacher_profile_user_id_fkey (
+    id,
+    contract_type,
+    em_contact_name,
+    em_contact_phone,
+    em_contact_rs,
+    departments:user_roles_department_id_fkey (
+      id, name
+    ),
+    positions:user_roles_position_id_fkey (
+      id, position
+    )
+  )
+`

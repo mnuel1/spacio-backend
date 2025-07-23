@@ -28,3 +28,13 @@ export const parseAvailableDays = (abbrString) => {
 
   return result.map((abbr) => daysMap[abbr] || abbr);
 };
+
+
+export function toMinutes(timeStr) {
+  const [h, m] = timeStr.split(":").map(Number);
+  return h * 60 + m;
+}
+
+export function overlap(a, b) {
+  return toMinutes(a.start) < toMinutes(b.end) && toMinutes(b.start) < toMinutes(a.end);
+}
