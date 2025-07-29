@@ -35,6 +35,10 @@ const {
     deleteUser
 } = require("../coordinator/userController")
 
+const {
+    getDashboard
+} = require("../coordinator/dashboardController")
+
 const router = express.Router()
 
 
@@ -68,4 +72,5 @@ router.get("/users", getUsers)
 router.put("/users/deactivate/:id", deactivateUser)
 router.delete("/users/:id", deleteUser)
 
+router.get("/dashboard", getDashboard)
 module.exports = router

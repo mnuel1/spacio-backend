@@ -1,8 +1,26 @@
 const supabase = require("../../supabase");
 const {
+  generateDayAbbrev,
+  parseAvailableDays,
+  generateTimeSlots
+} = require("../utils")
+const {
   getMyLoadQuery,
   getMySchedulesQuery
 } = require("../queries/faculty");
+
+const getDashboard = async (req, res) => {
+  try {
+    
+  } catch (error) {
+    console.error("Error fetching my load:", error);
+    return res.status(500).json({
+      title: 'Failed',
+      message: 'Something went wrong!',
+      data: null
+    });
+  }
+}
 
 const getMySchedules = async (req, res) => {
   const { id } = req.params;
@@ -135,7 +153,97 @@ const getMyLoad = async (req, res) => {
   }
 }
 
+const getPrefTimeDay = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { data, error } = await supabase
+      .from("teacher_profile")
+      .select('avail_days, pref_time')
+      .eq("id", id)
+      .single();
+
+    if (error || !data) throw error;
+
+    const { avail_days, pref_time } = data;
+
+    const availableDays = parseAvailableDays(avail_days); // from your utils
+
+    // Parse time range string (e.g. "09:00-17:00") to time slot array
+    const [start, end] = pref_time.split("-");
+    const timeSlots = generateTimeSlots(); // e.g. returns ["08:00", ..., "17:00"]
+
+    // Get only the relevant hours in the range
+    const filteredSlots = timeSlots.filter(slot => slot >= start && slot <= end);
+
+    // Build the availability object
+    const availability = {};
+    timeSlots.forEach(slot => {
+      availableDays.forEach(day => {
+        const key = day.toLowerCase(); // convert "Monday" → "monday"
+        if (!availability[key]) availability[key] = {};
+        availability[key][slot] = filteredSlots.includes(slot);
+      });
+    });
+
+    return res.status(200).json({
+      title: 'Success',
+      message: 'Schedules fetched successfully.',
+      data: availability,
+    });
+
+  } catch (error) {
+    console.error("Error fetching my load:", error);
+    return res.status(500).json({
+      title: 'Failed',
+      message: 'Something went wrong!',
+      data: null
+    });
+  }
+}
+
+const savePrefTImeDay = async (req, res) => {
+
+  try {
+    const { id, workDays, workHours } = req.body
+
+    const abbreviatedDays = generateDayAbbrev(workDays);
+    const timeRange = `${workHours[0]}-${workHours[workHours.length - 1]}`;
+
+    const { data, error } = await supabase
+      .from("teacher_schedules")
+      .update({
+        avail_days: abbreviatedDays,
+        pref_time: timeRange,
+      })
+      .eq("teacher_id", id);
+
+    if (error) {
+      throw error;
+    }
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Preferences saved successfully",
+      data,
+    });
+
+
+  } catch (error) {
+    console.error("Error fetching my load:", error);
+    return res.status(500).json({
+      title: 'Failed',
+      message: 'Something went wrong!',
+      data: null
+    });
+  }
+}
+
 module.exports = {
   getMySchedules,
-  getMyLoad
+  getMyLoad,
+  getPrefTimeDay,
+  savePrefTImeDay
 };
+
+

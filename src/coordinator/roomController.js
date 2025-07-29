@@ -213,8 +213,6 @@ const createRoom = async (req, res) => {
     });
   }
 };
-
-
 const editRoom = async (req, res) => {
   try {
     const { id } = req.params;
@@ -268,7 +266,6 @@ const editRoom = async (req, res) => {
     });
   }
 }
-
 const deleteRoom = async (req, res) => {
   const { id } = req.params;
   try {
