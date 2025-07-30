@@ -9,18 +9,265 @@ const {
   getMySchedulesQuery
 } = require("../queries/faculty");
 
+const dayjs = require('dayjs');
+const customParseFormat = require('dayjs/plugin/customParseFormat.js');
+const relativeTime = require('dayjs/plugin/relativeTime');
+
+dayjs.extend(customParseFormat);
+dayjs.extend(relativeTime);
+
+const scheduleOverview = async (id) => {
+  const { data, error } = await supabase
+    .from("teacher_schedules")
+    .select(getMySchedulesQuery)
+    .eq("teacher_id", id);
+
+  if (error) {
+    throw error;
+  }
+
+  const now = dayjs(); // Server time
+  const currentDay = now.format('dddd'); // e.g., "Monday"
+  const currentTime = now.format('HH:mm');
+
+  const classes = [];
+  const allClasses = [];
+  let totalClassesToday = 0;
+  let completedToday = 0;
+  let upcomingToday = [];
+
+  data.map((item) => {
+    const fullDays = parseAvailableDays(item.days);
+    const isToday = fullDays.includes(currentDay);
+
+    const todayDate = now.format('YYYY-MM-DD');
+    const start = dayjs(`${todayDate} ${item.start_time}`, 'YYYY-MM-DD HH:mm:ss');
+    const end = dayjs(`${todayDate} ${item.end_time}`, 'YYYY-MM-DD HH:mm:ss');
+
+    let status = 'upcoming';
+
+    if (isToday) {
+      totalClassesToday++;
+
+      if (now.isBefore(start)) {
+        status = 'upcoming';
+        upcomingToday.push(start);
+      } else if (now.isAfter(end)) {
+        status = 'completed';
+        completedToday++;
+      } else {
+        status = 'current';
+      }
+      classes.push({
+        id: item.id,
+        subject: item.subjects.subject,
+        code: item.subjects.subject_code,
+        section: item.sections.name,
+        time: `${start.format('HH:mm')} - ${end.format('HH:mm')}`,
+        room: item.rooms.room_title,
+        students: item.total_count,
+        status,
+      });
+    }
+
+    let scheduledDateTime = null;
+
+    for (let i = 0; i < 7; i++) {
+      const checkDate = now.add(i, 'day');
+      if (fullDays.includes(checkDate.format('dddd'))) {
+        scheduledDateTime = dayjs(`${checkDate.format('YYYY-MM-DD')} ${item.start_time}`, 'YYYY-MM-DD HH:mm:ss');
+        break;
+      }
+    }
+
+    // 🛡️ Ensure scheduledDateTime is a valid Dayjs object
+    if (scheduledDateTime && scheduledDateTime.isValid()) {
+      const timeUntil = scheduledDateTime.fromNow();
+      const readableDate = scheduledDateTime.format('dddd, MMMM D, YYYY');
+
+      allClasses.push({
+        id: item.id,
+        subject: item.subjects.subject,
+        code: item.subjects.subject_code,
+        section: item.sections.name,
+        time: `${start.format('HH:mm')} - ${end.format('HH:mm')}`,
+        room: item.rooms.room_title,
+        students: item.total_count,
+        date: readableDate,
+        timeUntil: timeUntil,
+        status: timeUntil,
+      });
+    } else {
+      console.warn(`Invalid scheduledDateTime for item ID ${item.id}`);
+    }
+
+  });
+
+  const nextClassTime = upcomingToday.length
+    ? [...upcomingToday].sort((a, b) => a.valueOf() - b.valueOf())[0].format('hh:mm A')
+    : null;
+
+  return {
+    currentTime: now.format('hh:mm A'),
+    date: now.format('dddd, MMMM D, YYYY'),
+    todaysClasses: {
+      metric: totalClassesToday,
+      completedClass: completedToday,
+      nextClass: nextClassTime,
+    },
+    classes,
+    allClasses
+  };
+
+}
+
+const availabilityOverview = async (id) => {
+  const { data, error } = await supabase
+    .from("teacher_profile")
+    .select('avail_days, pref_time')
+    .eq("id", id)
+    .single();
+
+  if (error || !data) throw error;
+
+  const { avail_days, pref_time } = data;
+  const availableDays = parseAvailableDays(avail_days); // e.g., ["Monday", "Wednesday", "Friday"]
+
+  const allDays = [
+    "Monday", "Tuesday", "Wednesday",
+    "Thursday", "Friday", "Saturday", "Sunday"
+  ];
+
+  const dailyPreferences = allDays.map((day) => ({
+    day,
+    available: availableDays.includes(day),
+    preferredTimes: availableDays.includes(day) ? [pref_time] : [],
+    restrictedTimes: [],
+  }));
+
+
+  return dailyPreferences
+
+
+}
+
+const loadOverview = async (id) => {
+  const { data, error } = await supabase
+    .from("teacher_schedules")
+    .select(getMyLoadQuery)
+    .eq("teacher_id", id);
+
+  if (error) throw error;
+
+  const subjectMap = {};
+  let totalSubjects = 0;
+  let totalSections = 0;
+  let totalStudents = 0;
+  let weeklyHours = 0;
+
+  data.forEach(entry => {
+    const subjectId = entry.subjects.id;
+
+    // Initialize subject entry
+    if (!subjectMap[subjectId]) {
+      subjectMap[subjectId] = {
+        id: subjectId,
+        code: entry.subjects.subject_code,
+        title: entry.subjects.subject,
+        sections: [],
+        totalStudents: 0,
+        weeklyHours: 0,
+        level: entry.subjects.level || "undergraduate",
+      };
+      totalSubjects++;
+    }
+
+    const subject = subjectMap[subjectId];
+
+    // Process schedule string (e.g. "MWF 08:00-09:30")
+    const dayMap = { M: "M", T: "T", W: "W", Th: "Th", F: "F" };
+    const rawDays = entry.days.match(/Th|[MTWF]/g) || [];
+    const shortDays = rawDays.map(d => dayMap[d]).join("");
+
+    const timeRange = `${entry.start_time.slice(0, 5)}-${entry.end_time.slice(0, 5)}`;
+    const scheduleStr = `${shortDays} ${timeRange}`;
+
+    // Check if section already added under this subject
+    const existingSection = subject.sections.find(s => s.id === entry.sections.id);
+
+    if (existingSection) {
+      existingSection.schedule += `, ${scheduleStr}`; // merge schedules
+    } else {
+      subject.sections.push({
+        id: entry.sections.name,
+        students: entry.total_count,
+        schedule: scheduleStr,
+        room: entry.rooms.room_title,
+      });
+      subject.totalStudents += entry.total_count;
+      subject.weeklyHours += entry.subjects.units;
+
+      totalStudents += entry.total_count;
+      weeklyHours += entry.subjects.units;
+      totalSections++;
+    }
+  });
+
+  // Build final structured response
+  const subjects = Object.values(subjectMap);
+
+  return {
+    summary: {
+      totalSubjects,
+      totalSections,
+      totalStudents,
+      weeklyHours,
+      maxCapacity: 21,
+      loadPercentage: Math.round((weeklyHours / 21) * 100), // assuming 21 hrs is 100%
+    },
+    subjects,
+  };
+
+}
+
 const getDashboard = async (req, res) => {
   try {
-    
+
+    const { id } = req.params
+
+    const [
+      scheduleOverviewData,
+      availabilityOverviewData,
+      loadOverviewData,
+    ] = await Promise.all([
+      scheduleOverview(id),
+      availabilityOverview(id),
+      loadOverview(id)
+    ]);
+
+    const response = {
+      scheduleOverview: scheduleOverviewData,
+      availabilityOverview: availabilityOverviewData,
+      loadOverview: loadOverviewData
+    };
+
+
+    return res.status(200).json({
+      title: 'Success',
+      message: 'Dashboard data retrieved successfully',
+      data: response
+    });
+
   } catch (error) {
-    console.error("Error fetching my load:", error);
+    console.error('Error retrieving dashboard data:', error.message);
+
     return res.status(500).json({
       title: 'Failed',
       message: 'Something went wrong!',
       data: null
     });
   }
-}
+};
 
 const getMySchedules = async (req, res) => {
   const { id } = req.params;
@@ -240,6 +487,7 @@ const savePrefTImeDay = async (req, res) => {
 }
 
 module.exports = {
+  getDashboard,
   getMySchedules,
   getMyLoad,
   getPrefTimeDay,
