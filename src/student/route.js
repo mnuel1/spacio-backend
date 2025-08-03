@@ -7,7 +7,7 @@ const {
 
 const studentRouter = express.Router()
 
-studentRouter.get("/schedule/:id", getSchedule)
+studentRouter.get("/schedules/:id", getSchedule)
 studentRouter.get("/faculty", getFaculty)
 
 module.exports = studentRouter

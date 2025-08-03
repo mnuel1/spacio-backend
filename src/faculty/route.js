@@ -10,7 +10,7 @@ const {
 
 const facultyRouter = express.Router()
 
-facultyRouter.post('/availability', savePrefTImeDay)
+facultyRouter.put('/availability', savePrefTImeDay)
 
 facultyRouter.get('/schedules/:id', getMySchedules)
 facultyRouter.get('/load/:id', getMyLoad)

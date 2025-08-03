@@ -32,7 +32,8 @@ const {
 const {
     getUsers,
     deactivateUser,
-    deleteUser
+    deleteUser,
+    addUsersByFile
 } = require("../coordinator/userController")
 
 const {
@@ -40,6 +41,7 @@ const {
 } = require("../coordinator/dashboardController")
 
 const router = express.Router()
+const multer = require("multer")
 
 
 router.post("/room", createRoom)
@@ -68,6 +70,9 @@ router.put("/conflicts/:id", updateConflict)
 
 router.post("/auto/schedule", runAutoSchedule)
 
+const upload = multer({ dest: 'uploads/' });
+
+router.post("/users/signup", upload.single('file'), addUsersByFile)
 router.get("/users", getUsers)
 router.put("/users/deactivate/:id", deactivateUser)
 router.delete("/users/:id", deleteUser)

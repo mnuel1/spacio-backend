@@ -1,4 +1,6 @@
 const supabase = require("../../supabase");
+require('dotenv').config();
+const APP_URL = process.env.APP_URL
 const editInfo = async (req, res) => {
   try {
     const { id } = req.params;
@@ -64,40 +66,72 @@ const editInfo = async (req, res) => {
 };
 
 
-// PENDING!
 const changePassword = async (req, res) => {
   try {
     const { id } = req.params;
     const { password } = req.body;
 
-    const { data, error } = await supabase
-      .from('users')
-      .update({ password })
-      .eq('id', id);
-    if (error) throw error;
-    if (data.length === 0) {
-      return res.status(404).json({
-        title: 'Not Found',
-        message: 'User not found.',
-        data: null
+    const { data, error } = await supabase.auth.admin.updateUserById(id, {
+      password,
+    });
+
+    if (error) {
+      return res.status(400).json({
+        title: "Error",
+        message: error.message,
+        data: null,
       });
     }
+
     return res.status(200).json({
-      title: 'Success',
-      message: 'Password changed successfully.',
-      data: data[0]
+      title: "Success",
+      message: "Password changed successfully.",
+      data,
     });
   } catch (error) {
-    console.error('Error changing password:', error.message);
+    console.error("Error changing password:", error.message);
     return res.status(500).json({
-      title: 'Failed',
-      message: 'Something went wrong!',
-      data: null
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
     });
   }
-}
+};
+
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${APP_URL}/reset-password`,
+    });
+
+    if (error) {
+      return res.status(400).json({
+        title: "Error",
+        message: error.message,
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Password reset email sent.",
+      data,
+    });
+  } catch (error) {
+    console.error("Error sending password reset:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
 
 module.exports = {
   editInfo,
-  changePassword
+  changePassword,
+  forgotPassword
 };

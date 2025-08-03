@@ -68,3 +68,33 @@ export function toMinutes(timeStr) {
 export function overlap(a, b) {
   return toMinutes(a.start) < toMinutes(b.end) && toMinutes(b.start) < toMinutes(a.end);
 }
+
+export const generateTimeDaySlots = ({ startTime, endTime, slotDuration, days }) => {
+  const slots = [];
+
+  const toMinutes = (timeStr) => {
+    const [h, m] = timeStr.split(":").map(Number);
+    return h * 60 + m;
+  };
+
+  const toTimeStr = (minutes) => {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+  };
+
+  const start = toMinutes(startTime);
+  const end = toMinutes(endTime);
+
+  for (const day of days) {
+    for (let t = start; t + slotDuration <= end; t += slotDuration) {
+      slots.push({
+        day,
+        start: toTimeStr(t),
+        end: toTimeStr(t + slotDuration),
+      });
+    }
+  }
+
+  return slots;
+};
