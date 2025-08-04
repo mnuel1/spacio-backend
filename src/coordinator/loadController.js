@@ -326,7 +326,6 @@ const getRooms = async () => {
   return data;
 };
 
-
 const getSubjects = async () => {
   const { data, error } = await supabase
     .from('subjects')
@@ -348,13 +347,27 @@ const getSubjects = async () => {
   return data;
 };
 
+const getSections = async () => {
+  const { data, error } = await supabase
+    .from("sections")
+    .select("id, name")
+
+  if (error) {
+    console.error('Error fetching subjects:', error.message);
+    throw error;
+  }
+
+  return data;
+}
+
 
 const runAutoSchedule = async (req, res) => {
   try {
-    const [teachers, rooms, subjects] = await Promise.all([
+    const [teachers, rooms, subjects, sections] = await Promise.all([
       getTeachers(),
       getRooms(),
       getSubjects(),
+      getSections(),
     ]);
 
     const schedule = {};
@@ -373,7 +386,7 @@ const runAutoSchedule = async (req, res) => {
     const instructors = teachers.map((teacher) => {
       const fullName = teacher.user_profile?.name || "Unnamed";
       const maxLoad = teacher.positions?.max_load || 18;
-      const availDays = parseAvailableDays(teacher.avail_days); // ← hook this here
+      const availDays = parseAvailableDays(teacher.avail_days);
 
       return {
         id: teacher.id,
@@ -381,9 +394,12 @@ const runAutoSchedule = async (req, res) => {
         maxLoad,
         currentLoad: teacher.current_load || 0,
         dayPref: availDays.length ? availDays : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-        timePref: { start: "08:00", end: "18:00" }, // future-proofing
+        timePref: { start: "08:00", end: "18:00" },
       };
     });
+
+    const getRandomSection = () =>
+      sections[Math.floor(Math.random() * sections.length)];
 
     const getSortedInstructors = () =>
       [...instructors].sort(
@@ -423,6 +439,8 @@ const runAutoSchedule = async (req, res) => {
 
           if (!roomAssigned) continue;
 
+          const assignedSection = getRandomSection();
+
           // Assign
           schedule[name] = [
             ...currentSchedule,
@@ -432,9 +450,10 @@ const runAutoSchedule = async (req, res) => {
               end,
               subject: subject.subject,
               subjectCode: subject.subject_code,
+              section: assignedSection.name,
+              sectionId: assignedSection.id,
               room: roomAssigned.room_id,
               roomTitle: roomAssigned.room_title,
-              section: subject.section || "TBA",
               units: subject.units,
             },
           ];
@@ -458,13 +477,13 @@ const runAutoSchedule = async (req, res) => {
 
     const conflictAnalysis = conflictNarratives.map((narrative) => {
       let tag = "Other", title = "Scheduling Issue", severity = "Low";
-      if (narrative.includes("has a schedule conflict")) {
+      if (narrative.includes("schedule conflict")) {
         tag = "Time Conflict"; title = "Instructor Time Overlap"; severity = "High";
       } else if (narrative.includes("unavailable on")) {
         tag = "Day Conflict"; title = "Unavailable on Assigned Day"; severity = "Medium";
       } else if (narrative.includes("unavailable at")) {
         tag = "Time Preference Conflict"; title = "Outside Preferred Time"; severity = "Medium";
-      } else if (narrative.includes("due to max load")) {
+      } else if (narrative.includes("max load")) {
         tag = "Overload Conflict"; title = "Exceeds Max Load"; severity = "High";
       } else if (narrative.includes("No available room")) {
         tag = "Room Conflict"; title = "No Room Available"; severity = "High";
@@ -481,6 +500,35 @@ const runAutoSchedule = async (req, res) => {
       };
     });
 
+    // Insert scheduled classes into the database
+    const insertPromises = [];
+
+    Object.entries(schedule).forEach(([teacherName, classes]) => {
+      const teacher = instructors.find((t) => t.name === teacherName);
+      if (!teacher) return;
+
+      classes.forEach((cls) => {
+        const subject = subjects.find(s => s.subject_code === cls.subjectCode);
+        const room = rooms.find(r => r.room_id === cls.room);
+        const section = sections.find(s => s.name === cls.section);
+
+        insertPromises.push(
+          supabase.from("teacher_schedules").insert({
+            teacher_id: teacher.id,
+            subject_id: subject?.id || null,
+            section_id: section?.id || null,
+            room_id: room?.id || null,
+            days: cls.day,
+            start_time: cls.start,
+            end_time: cls.end,
+          })
+        );
+      });
+    });
+   
+    const insertResults = await Promise.all(insertPromises);
+    const insertErrors = insertResults.filter(r => r.error);
+  
     return res.status(200).json({
       title: "Success",
       message: "Auto-scheduling complete.",
@@ -491,6 +539,9 @@ const runAutoSchedule = async (req, res) => {
         roomBookings,
         conflictNarratives,
         diagnostics: conflictAnalysis,
+        insertedSchedules: insertPromises.length,
+        failedInsertions: insertErrors.length,
+  
       },
     });
   } catch (error) {
@@ -502,6 +553,7 @@ const runAutoSchedule = async (req, res) => {
     });
   }
 };
+
 
 const getConflicts = async (req, res) => {
   try {
