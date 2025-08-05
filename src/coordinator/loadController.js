@@ -733,7 +733,6 @@ const runAutoSchedule = async (req, res) => {
         diagnostics: conflictAnalysis,
         insertedSchedules: insertPromises.length,
         failedInsertions: insertErrors.length,
-
       },
     });
   } catch (error) {
