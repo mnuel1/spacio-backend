@@ -274,11 +274,8 @@ const reassignSubject = async (req, res) => {
 //   { id: "R101", capacity: 30 },
 // ]
 
-
 const getTeachers = async () => {
-  const { data, error } = await supabase
-    .from('teacher_profile')
-    .select(`
+  const { data, error } = await supabase.from("teacher_profile").select(`
         id,
         current_load,
         avail_days,
@@ -300,7 +297,7 @@ const getTeachers = async () => {
       `);
 
   if (error) {
-    console.error('Error fetching teachers:', error.message);
+    console.error("Error fetching teachers:", error.message);
     throw error;
   }
 
@@ -308,9 +305,7 @@ const getTeachers = async () => {
 };
 
 const getRooms = async () => {
-  const { data, error } = await supabase
-    .from('room')
-    .select(`
+  const { data, error } = await supabase.from("room").select(`
         id,
         room_id,
         room_title,
@@ -320,7 +315,7 @@ const getRooms = async () => {
       `);
 
   if (error) {
-    console.error('Error fetching rooms:', error.message);
+    console.error("Error fetching rooms:", error.message);
     throw error;
   }
 
@@ -328,9 +323,7 @@ const getRooms = async () => {
 };
 
 const getSubjects = async () => {
-  const { data, error } = await supabase
-    .from('subjects')
-    .select(`
+  const { data, error } = await supabase.from("subjects").select(`
         id,
         subject,
         subject_code,
@@ -341,7 +334,7 @@ const getSubjects = async () => {
       `);
 
   if (error) {
-    console.error('Error fetching subjects:', error.message);
+    console.error("Error fetching subjects:", error.message);
     throw error;
   }
 
@@ -349,40 +342,38 @@ const getSubjects = async () => {
 };
 
 const getSections = async () => {
-  const { data, error } = await supabase
-    .from("sections")
-    .select("id, name")
+  const { data, error } = await supabase.from("sections").select("id, name");
 
   if (error) {
-    console.error('Error fetching subjects:', error.message);
+    console.error("Error fetching subjects:", error.message);
     throw error;
   }
 
   return data;
-}
+};
 
 const dayAbbrevMap = {
   Monday: "M",
   Tuesday: "T",
   Wednesday: "W",
   Thursday: "Th",
-  Friday: "F"
+  Friday: "F",
 };
 const calculateDurationInTimeFormat = (start, end) => {
   const [startH, startM] = start.split(":").map(Number);
   const [endH, endM] = end.split(":").map(Number);
 
-  let durationMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+  let durationMinutes = endH * 60 + endM - (startH * 60 + startM);
 
-  const hours = Math.floor(durationMinutes / 60).toString().padStart(2, '0');
-  const minutes = (durationMinutes % 60).toString().padStart(2, '0');
+  const hours = Math.floor(durationMinutes / 60)
+    .toString()
+    .padStart(2, "0");
+  const minutes = (durationMinutes % 60).toString().padStart(2, "0");
 
   return `${hours}:${minutes}`;
 };
 
-
 const availableDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-
 
 function generateDayBundles(days = availableDays, lengths = [2, 3]) {
   const result = [];
@@ -399,28 +390,35 @@ function generateDayBundles(days = availableDays, lengths = [2, 3]) {
     }
   };
 
-  lengths.forEach(len => combine(days, len));
+  lengths.forEach((len) => combine(days, len));
   return result;
 }
 
 const scoreDayBundle = (bundle, preferredDays) => {
-  return bundle.reduce((score, day) => preferredDays.includes(day) ? score + 1 : score, 0);
+  return bundle.reduce(
+    (score, day) => (preferredDays.includes(day) ? score + 1 : score),
+    0
+  );
 };
 
-const prioritizeBundlesForTeacher = (allBundles, preferredDays, useStrict = false) => {
+const prioritizeBundlesForTeacher = (
+  allBundles,
+  preferredDays,
+  useStrict = false
+) => {
   const filtered = useStrict
-    ? allBundles.filter(bundle =>
-      bundle.every(day => preferredDays.includes(day))
-    )
+    ? allBundles.filter((bundle) =>
+        bundle.every((day) => preferredDays.includes(day))
+      )
     : allBundles;
 
   return filtered
-    .map(bundle => ({
+    .map((bundle) => ({
       bundle,
       score: scoreDayBundle(bundle, preferredDays),
     }))
     .sort((a, b) => b.score - a.score)
-    .map(item => item.bundle);
+    .map((item) => item.bundle);
 };
 
 const getDurationCombinations = (totalHours) => {
@@ -456,8 +454,6 @@ const calculateDurationInHours = (start, end) => {
   return (endMinutes - startMinutes) / 60;
 };
 
-
-
 const runAutoSchedule = async (req, res) => {
   try {
     const [teachers, rooms, subjects, sections] = await Promise.all([
@@ -492,7 +488,9 @@ const runAutoSchedule = async (req, res) => {
         name: fullName,
         maxLoad,
         currentLoad: teacher.current_load || 0,
-        dayPref: availDays.length ? availDays : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+        dayPref: availDays.length
+          ? availDays
+          : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
         timePref: { start: "08:00", end: "18:00" },
       };
     });
@@ -507,15 +505,20 @@ const runAutoSchedule = async (req, res) => {
 
     const isRoomAvailable = (room, day, start, end) => {
       const bookings = roomBookings[day] || [];
-      return !bookings.some((b) => b.room.id === room.id && overlap(b, { start, end }));
+      return !bookings.some(
+        (b) => b.room.id === room.id && overlap(b, { start, end })
+      );
     };
     for (const subject of subjects) {
       let assigned = false;
 
       for (const slot of timeSlots) {
         for (const instructor of getSortedInstructors()) {
-
-          const preferredBundles = prioritizeBundlesForTeacher(allDayBundles, instructor.dayPref, true);
+          const preferredBundles = prioritizeBundlesForTeacher(
+            allDayBundles,
+            instructor.dayPref,
+            true
+          );
           const currentSchedule = schedule[instructor.name] || [];
           const currentLoad = loadMap[instructor.name] || 0;
 
@@ -538,20 +541,24 @@ const runAutoSchedule = async (req, res) => {
               for (let i = 0; i < durations.length; i++) {
                 const day = sessions[i];
                 const availableSlots = timeSlots.filter(
-                  s => s.day === day &&
-                    parseFloat(calculateDurationInHours(s.start, s.end)) >= durations[i]
+                  (s) =>
+                    s.day === day &&
+                    parseFloat(calculateDurationInHours(s.start, s.end)) >=
+                      durations[i]
                 );
 
                 let found = null;
                 for (const slot of availableSlots) {
                   const { start, end } = slot;
-                  const instructorBusy = currentSchedule.some(cls =>
-                    cls.day === day && overlap(cls, { start, end })
+                  const instructorBusy = currentSchedule.some(
+                    (cls) => cls.day === day && overlap(cls, { start, end })
                   );
 
                   if (instructorBusy) continue;
 
-                  const room = rooms.find(r => isRoomAvailable(r, day, start, end));
+                  const room = rooms.find((r) =>
+                    isRoomAvailable(r, day, start, end)
+                  );
                   if (!room) continue;
 
                   found = { day, start, end, room, duration: durations[i] };
@@ -570,7 +577,7 @@ const runAutoSchedule = async (req, res) => {
             if (assignedCombo) {
               const section = getRandomSection();
 
-              const newClasses = assignedCombo.map(sa => ({
+              const newClasses = assignedCombo.map((sa) => ({
                 day: sa.day,
                 start: sa.start,
                 end: sa.end,
@@ -586,43 +593,60 @@ const runAutoSchedule = async (req, res) => {
               schedule[instructor.name] = [...currentSchedule, ...newClasses];
 
               for (const sa of assignedCombo) {
-                roomBookings[sa.day] = [...(roomBookings[sa.day] || []), { start: sa.start, end: sa.end, room: sa.room }];
+                roomBookings[sa.day] = [
+                  ...(roomBookings[sa.day] || []),
+                  { start: sa.start, end: sa.end, room: sa.room },
+                ];
               }
 
               loadMap[instructor.name] = currentLoad + subject.units;
               bundleAssigned = true;
               break;
             }
-
           }
 
           if (bundleAssigned) break;
         }
-
 
         if (assigned) break;
       }
 
       if (!assigned) {
         unassigned.push(subject.subject_code);
-        conflictNarratives.push(`Could not assign ${subject.subject} (${subject.subject_code}).`);
+        conflictNarratives.push(
+          `Could not assign ${subject.subject} (${subject.subject_code}).`
+        );
       }
     }
 
     const conflictAnalysis = conflictNarratives.map((narrative) => {
-      let tag = "Other", title = "Scheduling Issue", severity = "Low";
+      let tag = "Other",
+        title = "Scheduling Issue",
+        severity = "Low";
       if (narrative.includes("schedule conflict")) {
-        tag = "Time Conflict"; title = "Instructor Time Overlap"; severity = "High";
+        tag = "Time Conflict";
+        title = "Instructor Time Overlap";
+        severity = "High";
       } else if (narrative.includes("unavailable on")) {
-        tag = "Day Conflict"; title = "Unavailable on Assigned Day"; severity = "Medium";
+        tag = "Day Conflict";
+        title = "Unavailable on Assigned Day";
+        severity = "Medium";
       } else if (narrative.includes("unavailable at")) {
-        tag = "Time Preference Conflict"; title = "Outside Preferred Time"; severity = "Medium";
+        tag = "Time Preference Conflict";
+        title = "Outside Preferred Time";
+        severity = "Medium";
       } else if (narrative.includes("max load")) {
-        tag = "Overload Conflict"; title = "Exceeds Max Load"; severity = "High";
+        tag = "Overload Conflict";
+        title = "Exceeds Max Load";
+        severity = "High";
       } else if (narrative.includes("No available room")) {
-        tag = "Room Conflict"; title = "No Room Available"; severity = "High";
+        tag = "Room Conflict";
+        title = "No Room Available";
+        severity = "High";
       } else if (narrative.includes("Could not assign")) {
-        tag = "Unassigned"; title = "Subject Unassigned"; severity = "High";
+        tag = "Unassigned";
+        title = "Subject Unassigned";
+        severity = "High";
       }
 
       return {
@@ -645,7 +669,9 @@ const runAutoSchedule = async (req, res) => {
       if (!teacher) return;
 
       classes.forEach((cls) => {
-        const subject = subjects.find((s) => s.subject_code === cls.subjectCode);
+        const subject = subjects.find(
+          (s) => s.subject_code === cls.subjectCode
+        );
         const room = rooms.find((r) => r.room_id === cls.room);
         const section = sections.find((s) => s.name === cls.section);
 
@@ -697,15 +723,14 @@ const runAutoSchedule = async (req, res) => {
     });
 
     const insertResults = await Promise.all(insertPromises);
-    const insertErrors = insertResults.filter(r => r.error);
+    const insertErrors = insertResults.filter((r) => r.error);
 
-    
     await supabase.from("conflicts").delete().neq("id", 0);
-    const conflictInsertPromises = conflictAnalysis.map(conflict =>
+    const conflictInsertPromises = conflictAnalysis.map((conflict) =>
       supabase.from("conflicts").insert(conflict)
     );
     const conflictInsertResults = await Promise.all(conflictInsertPromises);
-    const conflictInsertErrors = conflictInsertResults.filter(r => r.error);
+    const conflictInsertErrors = conflictInsertResults.filter((r) => r.error);
 
     if (insertErrors.length > 0 || conflictInsertErrors.length > 0) {
       console.warn("Rolling back due to insert error.");
@@ -745,7 +770,6 @@ const runAutoSchedule = async (req, res) => {
   }
 };
 
-
 const getConflicts = async (req, res) => {
   try {
     const { data, error } = await supabase.from("conflicts").select("*");
@@ -769,12 +793,36 @@ const getConflicts = async (req, res) => {
 
 const updateConflict = async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, assigned_to, solution_details, notes, resolution_type } =
+    req.body;
 
   try {
+    // Build update object with only provided fields
+    const updateData = { status };
+
+    if (assigned_to !== undefined) {
+      updateData.assigned_to = assigned_to;
+      updateData.assigned_at = new Date().toISOString();
+    }
+
+    if (solution_details !== undefined) {
+      updateData.solution_details = solution_details;
+    }
+
+    if (notes !== undefined) {
+      updateData.notes = notes;
+    }
+
+    if (resolution_type !== undefined) {
+      updateData.resolution_type = resolution_type;
+      if (resolution_type === "resolved") {
+        updateData.resolved_at = new Date().toISOString();
+      }
+    }
+
     const { data, error } = await supabase
       .from("conflicts")
-      .update({ status })
+      .update(updateData)
       .eq("id", id)
       .select();
 
