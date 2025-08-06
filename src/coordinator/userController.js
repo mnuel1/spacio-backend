@@ -134,12 +134,13 @@ const addUsersByFile = async (req, res) => {
     const results = [];
 
     for (const user of users) {
-      const { email, password, name, role, email_verified } = user;
+      const { email, name, role, email_verified } = user;
 
-            
+      const pass = name.split(' ')[0].toUpperCase()
+
       const { error } = await supabase.auth.admin.createUser({
         email,
-        password,
+        pass,
         email_confirm: BYPASS_EMAIL_CONFIRMATION,
         user_metadata: {
           name,
