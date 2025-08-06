@@ -61,7 +61,7 @@ const deleteUser = async (req, res) => {
     const { id } = req.params;
 
     const { data, error } = await supabase
-      .from("users_profile")
+      .from("user_profile")
       .delete()
       .eq("id", id)
       .select();
@@ -120,12 +120,10 @@ const addUsersByFile = async (req, res) => {
         data: null,
       });
     }
-        
 
     let users;
     try {
-      users = parseFile(req.file.path, req.file.mimetype);      
-      
+      users = parseFile(req.file.path, req.file.mimetype);
     } catch (err) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: err.message });
@@ -136,11 +134,11 @@ const addUsersByFile = async (req, res) => {
     for (const user of users) {
       const { email, name, role, email_verified } = user;
 
-      const pass = name.split(' ')[0].toUpperCase()
+      const pass = name.split(" ")[0].toUpperCase();
 
       const { error } = await supabase.auth.admin.createUser({
         email,
-        pass,
+        password: pass,
         email_confirm: BYPASS_EMAIL_CONFIRMATION,
         user_metadata: {
           name,
@@ -151,9 +149,9 @@ const addUsersByFile = async (req, res) => {
 
       if (error) {
         results.push({ email, success: false, error: error.message });
-      } else {                
+      } else {
         results.push({ email, success: true });
-      }      
+      }
 
       await new Promise((res) => setTimeout(res, 300));
     }

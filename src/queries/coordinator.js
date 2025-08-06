@@ -52,7 +52,7 @@ export const getFacultyQuery = `
       min_load
     )
   )
-`
+`;
 
 export const getSchedulesQuery = `
   id,
@@ -142,11 +142,11 @@ export const getUsersQuery = `
   phone,
   birthdate,
   gender,
-  civil_status
+  civil_status,
   address,
   profile_image,
   status,
-  created_at
+  created_at,
   teacher_profile:teacher_profile_user_id_fkey (
     id,
     contract_type,
@@ -160,4 +160,4 @@ export const getUsersQuery = `
       id, position
     )
   )
-`
+`;
