@@ -425,25 +425,53 @@ const getPrefTimeDay = async (req, res) => {
     const { avail_days, pref_time } = data;
 
     const availableDays = parseAvailableDays(avail_days); // from your utils
-
-    // Parse time range string (e.g. "09:00-17:00") to time slot array
-    const [start, end] = pref_time.split("-");
     const timeSlots = generateTimeSlots(); // e.g. returns ["08:00", ..., "17:00"]
 
-    // Get only the relevant hours in the range
-    const filteredSlots = timeSlots.filter(
-      (slot) => slot >= start && slot <= end
-    );
-
-    // Build the availability object
+    // Initialize availability object with all days and time slots set to false
     const availability = {};
-    timeSlots.forEach((slot) => {
-      availableDays.forEach((day) => {
-        const key = day.toLowerCase(); // convert "Monday" → "monday"
-        if (!availability[key]) availability[key] = {};
-        availability[key][slot] = filteredSlots.includes(slot);
+    const allDays = [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ];
+
+    allDays.forEach((day) => {
+      const key = day.toLowerCase(); // convert "Monday" → "monday"
+      availability[key] = {};
+      timeSlots.forEach((slot) => {
+        availability[key][slot] = false;
       });
     });
+
+    // If there are available days and preferred time, mark those slots as available
+    if (availableDays && availableDays.length > 0 && pref_time) {
+      try {
+        // Parse time range string (e.g. "09:00-17:00") to time slot array
+        const [start, end] = pref_time.split("-");
+
+        // Get only the relevant hours in the range
+        const filteredSlots = timeSlots.filter(
+          (slot) => slot >= start && slot <= end
+        );
+
+        // Mark available slots
+        timeSlots.forEach((slot) => {
+          availableDays.forEach((day) => {
+            const key = day.toLowerCase(); // convert "Monday" → "monday"
+            if (availability[key]) {
+              availability[key][slot] = filteredSlots.includes(slot);
+            }
+          });
+        });
+      } catch (timeParseError) {
+        console.error("Error parsing pref_time:", timeParseError);
+        // Keep default availability (all false) if time parsing fails
+      }
+    }
 
     return res.status(200).json({
       title: "Success",
@@ -451,10 +479,10 @@ const getPrefTimeDay = async (req, res) => {
       data: availability,
     });
   } catch (error) {
-    console.error("Error fetching my load:", error);
+    console.error("Error fetching availability preferences:", error);
     return res.status(500).json({
       title: "Failed",
-      message: "Something went wrong!",
+      message: "Something went wrong while fetching availability preferences!",
       data: null,
     });
   }
@@ -464,16 +492,30 @@ const savePrefTImeDay = async (req, res) => {
   try {
     const { id, workDays, workHours } = req.body;
 
-    const abbreviatedDays = generateDayAbbrev(workDays);
-    const timeRange = `${workHours[0]}-${workHours[workHours.length - 1]}`;
+    // Validate required fields
+    if (!id) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Teacher profile ID is required",
+        data: null,
+      });
+    }
+
+    // Handle empty arrays gracefully
+    const abbreviatedDays =
+      workDays && workDays.length > 0 ? generateDayAbbrev(workDays) : null;
+    const timeRange =
+      workHours && workHours.length > 0
+        ? `${workHours[0]}-${workHours[workHours.length - 1]}`
+        : null;
 
     const { data, error } = await supabase
-      .from("teacher_schedules")
+      .from("teacher_profile")
       .update({
         avail_days: abbreviatedDays,
         pref_time: timeRange,
       })
-      .eq("teacher_id", id);
+      .eq("id", id);
 
     if (error) {
       throw error;
@@ -485,10 +527,10 @@ const savePrefTImeDay = async (req, res) => {
       data,
     });
   } catch (error) {
-    console.error("Error fetching my load:", error);
+    console.error("Error saving availability preferences:", error);
     return res.status(500).json({
       title: "Failed",
-      message: "Something went wrong!",
+      message: "Something went wrong while saving preferences!",
       data: null,
     });
   }
