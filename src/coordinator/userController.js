@@ -134,7 +134,7 @@ const addUsersByFile = async (req, res) => {
     for (const user of users) {
       const { email, name, role, email_verified } = user;
 
-      const pass = name.split(" ")[0].toUpperCase();
+      const pass = name.replace(/\s+/g, "").toUpperCase();
 
       const { error } = await supabase.auth.admin.createUser({
         email,
