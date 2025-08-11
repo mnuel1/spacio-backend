@@ -43,12 +43,10 @@ const {
 const router = express.Router()
 const multer = require("multer")
 
-
 router.post("/room", createRoom)
 router.put("/room/:id", editRoom)
 router.delete("/room/:id", deleteRoom)
 router.get("/rooms", getRooms)
-
 
 router.post("/faculty", createFaculty)
 router.put("/faculty/:id", updateFaculty)
@@ -61,8 +59,8 @@ router.delete("/schedule/:id", deleteSchedule)
 router.get("/schedule", getSchedule)
 
 router.post("/load/add/subject", addSubject)
-router.put("/load/remove/subject", removeSubject)
-router.delete("/load/reassign/subject", reassignSubject)
+router.delete("/load/remove/subject/:id", removeSubject)
+router.put("/load/reassign/subject/:id", reassignSubject)
 router.get("/load", getLoad)
 
 router.get("/conflicts", getConflicts)

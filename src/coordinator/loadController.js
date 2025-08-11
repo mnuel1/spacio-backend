@@ -4,7 +4,12 @@ const {
   parseAvailableDays,
   toMinutes,
   overlap,
+  toHHMM,
+  getRandomInt,
   generateTimeDaySlots,
+  getRandomSection,
+  isRoomAvailable,
+  calculateDurationInTimeFormat
 } = require("../utils.js");
 
 const getLoad = async (req, res) => {
@@ -131,12 +136,98 @@ const addSubject = async (req, res) => {
       days,
       start_time,
       end_time,
-      total_copunt,
+      total_count,
       semester,
       school_year,
     } = req.body;
 
-    days = abbreviateDays(days);
+    // Get teacher + min_load from position
+    const { data: teacherData, error: teacherError } = await supabase
+      .from("teacher_profile")
+      .select(`
+        current_load,
+        position_id,
+        positions!inner (
+          min_load
+        )
+      `)
+      .eq("id", teacher_id)
+      .single();
+
+    if (teacherError) throw teacherError;
+    if (!teacherData) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Teacher not found.",
+      });
+    }
+
+    // Get subject units
+    const { data: subjectData, error: subjectError } = await supabase
+      .from("subjects")
+      .select("units")
+      .eq("id", subject_id)
+      .single();
+
+    if (subjectError) throw subjectError;
+    if (!subjectData) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Subject not found.",
+      });
+    }
+
+    const { current_load, positions } = teacherData;
+    const min_load = positions?.min_load || 0;
+    const { units } = subjectData;
+
+    // Check load limit
+    if (current_load + units > min_load + 12) {
+      return res.status(400).json({
+        title: "Failed",
+        message: `Cannot assign subject. Adding ${units} units will exceed the allowed load (${min_load + 12}).`,
+      });
+    }
+
+    const abbrevDays = abbreviateDays(days);
+
+    // ===== Check 1: Room conflict =====
+    const { data: roomConflict, error: roomError } = await supabase
+      .from("teacher_schedules")
+      .select("id")
+      .eq("room_id", room_id)
+      .eq("days", abbrevDays)
+      .eq("start_time", start_time)
+      .eq("end_time", end_time);
+
+    if (roomError) throw roomError;
+    if (roomConflict.length > 0) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Room is already booked at this time on this day.",
+      });
+    }
+
+    // ===== Check 2: Same section + subject same day =====
+    const { data: sectionConflict, error: sectionError } = await supabase
+      .from("teacher_schedules")
+      .select("id")
+      .eq("section_id", section_id)
+      .eq("subject_id", subject_id)
+      .eq("days", abbrevDays);
+
+    if (sectionError) throw sectionError;
+    if (sectionConflict.length > 0) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "This section already has this subject on the same day.",
+      });
+    }
+
+    // Calculate total duration (if you have this helper)
+    const total_duration = calculateDurationInTimeFormat(start_time, end_time);
+
+    // Insert subject
     const { data, error } = await supabase
       .from("teacher_schedules")
       .insert({
@@ -144,22 +235,30 @@ const addSubject = async (req, res) => {
         teacher_id,
         section_id,
         room_id,
-        days,
+        days: abbrevDays,
         start_time,
         end_time,
-        total_copunt,
+        total_count,
         semester,
         school_year,
+        total_duration
       })
       .select();
 
     if (error) throw error;
+
+    // Update teacher's current load
+    await supabase
+      .from("teacher_profile")
+      .update({ current_load: current_load + units })
+      .eq("id", teacher_id);
 
     return res.status(201).json({
       title: "Success",
       message: "Subject added successfully.",
       data: data,
     });
+
   } catch (error) {
     console.error("Error adding subject:", error.message);
 
@@ -170,6 +269,7 @@ const addSubject = async (req, res) => {
     });
   }
 };
+
 
 const removeSubject = async (req, res) => {
   const { id } = req.params;
@@ -201,35 +301,20 @@ const removeSubject = async (req, res) => {
 
 const reassignSubject = async (req, res) => {
   const { id } = req.params;
-  const {
-    subject_id,
-    teacher_id,
-    section_id,
-    room_id,
-    days,
-    start_time,
-    end_time,
-    total_copunt,
-    semester,
-    school_year,
-  } = req.body;
+
+  let updateFields = { ...req.body };
 
   try {
-    days = abbreviateDays(days);
+
+    if (updateFields.days) {
+      updateFields.days = abbreviateDays(updateFields.days);
+    }
+
     const { data, error } = await supabase
       .from("teacher_schedules")
-      .update({
-        subject_id,
-        teacher_id,
-        section_id,
-        room_id,
-        days,
-        start_time,
-        end_time,
-        total_copunt,
-        semester,
-        school_year,
-      })
+      .update(
+        updateFields
+      )
       .eq("id", id)
       .select();
 
@@ -250,29 +335,6 @@ const reassignSubject = async (req, res) => {
     });
   }
 };
-
-// const instructors = [
-//   {
-//     name: "Dr. Maria Smith",
-//     role: "Instructor",
-//     maxLoad: 18,
-//     canTeach: ["ENG101", "ENG102"],
-//     timePref: { start: "09:00", end: "13:00" },
-//     dayPref: ["Monday", "Wednesday", "Friday"]
-//   }
-// ];
-
-// const subjects = [
-//   {
-//     name: "ENG101",
-//     schedule: { day: "Tuesday", start: "09:00", end: "10:30", section: "A" },
-//     load: 3
-//   },
-// ];
-
-// const rooms = [
-//   { id: "R101", capacity: 30 },
-// ]
 
 const getTeachers = async () => {
   const { data, error } = await supabase.from("teacher_profile").select(`
@@ -342,117 +404,27 @@ const getSubjects = async () => {
 };
 
 const getSections = async () => {
-  const { data, error } = await supabase.from("sections").select("id, name");
+  const { data, error } = await supabase
+    .from("sections")
+    .select(`
+      id,
+      name,
+      student_sections:student_sections(count)
+    `);
 
   if (error) {
-    console.error("Error fetching subjects:", error.message);
+    console.error("Error fetching sections:", error.message);
     throw error;
   }
 
-  return data;
+  const sectionsWithCount = data.map(section => ({
+    ...section,
+    total_count: section.student_sections[0]?.count || 0
+  }));
+
+  return sectionsWithCount;
 };
 
-const dayAbbrevMap = {
-  Monday: "M",
-  Tuesday: "T",
-  Wednesday: "W",
-  Thursday: "Th",
-  Friday: "F",
-};
-const calculateDurationInTimeFormat = (start, end) => {
-  const [startH, startM] = start.split(":").map(Number);
-  const [endH, endM] = end.split(":").map(Number);
-
-  let durationMinutes = endH * 60 + endM - (startH * 60 + startM);
-
-  const hours = Math.floor(durationMinutes / 60)
-    .toString()
-    .padStart(2, "0");
-  const minutes = (durationMinutes % 60).toString().padStart(2, "0");
-
-  return `${hours}:${minutes}`;
-};
-
-const availableDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-
-function generateDayBundles(days = availableDays, lengths = [2, 3]) {
-  const result = [];
-
-  const combine = (arr, len, start = 0, temp = []) => {
-    if (temp.length === len) {
-      result.push([...temp]);
-      return;
-    }
-    for (let i = start; i < arr.length; i++) {
-      temp.push(arr[i]);
-      combine(arr, len, i + 1, temp);
-      temp.pop();
-    }
-  };
-
-  lengths.forEach((len) => combine(days, len));
-  return result;
-}
-
-const scoreDayBundle = (bundle, preferredDays) => {
-  return bundle.reduce(
-    (score, day) => (preferredDays.includes(day) ? score + 1 : score),
-    0
-  );
-};
-
-const prioritizeBundlesForTeacher = (
-  allBundles,
-  preferredDays,
-  useStrict = false
-) => {
-  const filtered = useStrict
-    ? allBundles.filter((bundle) =>
-        bundle.every((day) => preferredDays.includes(day))
-      )
-    : allBundles;
-
-  return filtered
-    .map((bundle) => ({
-      bundle,
-      score: scoreDayBundle(bundle, preferredDays),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .map((item) => item.bundle);
-};
-
-const getDurationCombinations = (totalHours) => {
-  const validDurations = [1, 1.5, 2, 3];
-  const results = [];
-
-  const backtrack = (remain, combo = []) => {
-    if (remain === 0) {
-      results.push([...combo]);
-      return;
-    }
-
-    for (let dur of validDurations) {
-      if (dur <= remain) {
-        combo.push(dur);
-        backtrack(remain - dur, combo);
-        combo.pop();
-      }
-    }
-  };
-
-  backtrack(totalHours);
-  return results.sort((a, b) => a.length - b.length); // Try fewer sessions first
-};
-
-const calculateDurationInHours = (start, end) => {
-  const [startH, startM] = start.split(":").map(Number);
-  const [endH, endM] = end.split(":").map(Number);
-
-  const startMinutes = startH * 60 + startM;
-  const endMinutes = endH * 60 + endM;
-
-  return (endMinutes - startMinutes) / 60;
-};
 
 const runAutoSchedule = async (req, res) => {
   try {
@@ -465,203 +437,178 @@ const runAutoSchedule = async (req, res) => {
 
     const schedule = {};
     const loadMap = {};
+    const dailySubjectCount = {};
     const roomBookings = {};
+    const instructorBookings = {};
     const unassigned = [];
-    const conflictNarratives = [];
+    const sectionSubjectDays = {};
 
-    const timeSlots = generateTimeDaySlots({
-      startTime: "08:00",
-      endTime: "18:00",
-      slotDuration: 60,
-      days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-    });
+    const instructors = teachers
+      .filter((teacher) => teacher.positions?.max_load)
+      .map((teacher) => {
+        const fullName = teacher.user_profile?.name || "Unnamed";
+        const maxLoad = teacher.positions?.max_load || 18;
+        const availDays = parseAvailableDays(teacher.avail_days);
 
-    const allDayBundles = generateDayBundles(availableDays, [2, 3]);
+        return {
+          id: teacher.id,
+          name: fullName,
+          maxLoad,
+          currentLoad: teacher.current_load || 0,
+          dayPref: availDays.length
+            ? availDays
+            : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+          timePref: { start: "08:00", end: "18:00" },
+        };
+      });
 
-    const instructors = teachers.map((teacher) => {
-      const fullName = teacher.user_profile?.name || "Unnamed";
-      const maxLoad = teacher.positions?.max_load || 18;
-      const availDays = parseAvailableDays(teacher.avail_days);
-
-      return {
-        id: teacher.id,
-        name: fullName,
-        maxLoad,
-        currentLoad: teacher.current_load || 0,
-        dayPref: availDays.length
-          ? availDays
-          : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-        timePref: { start: "08:00", end: "18:00" },
-      };
-    });
-
-    const getRandomSection = () =>
-      sections[Math.floor(Math.random() * sections.length)];
-
-    const getSortedInstructors = () =>
-      [...instructors].sort(
-        (a, b) => (loadMap[a.name] || 0) - (loadMap[b.name] || 0)
-      );
-
-    const isRoomAvailable = (room, day, start, end) => {
-      const bookings = roomBookings[day] || [];
-      return !bookings.some(
-        (b) => b.room.id === room.id && overlap(b, { start, end })
+    const isRoomFree = (roomId, day, start, end) => {
+      if (!roomBookings[roomId]) roomBookings[roomId] = {};
+      if (!roomBookings[roomId][day]) return true;
+      return !roomBookings[roomId][day].some(
+        (b) => !(end <= b.start || start >= b.end)
       );
     };
-    for (const subject of subjects) {
-      let assigned = false;
 
-      for (const slot of timeSlots) {
-        for (const instructor of getSortedInstructors()) {
-          const preferredBundles = prioritizeBundlesForTeacher(
-            allDayBundles,
-            instructor.dayPref,
-            true
-          );
-          const currentSchedule = schedule[instructor.name] || [];
-          const currentLoad = loadMap[instructor.name] || 0;
+    const isInstructorFree = (instructorId, day, start, end) => {
+      if (!instructorBookings[instructorId]) instructorBookings[instructorId] = {};
+      if (!instructorBookings[instructorId][day]) return true;
+      return !instructorBookings[instructorId][day].some(
+        (b) => !(end <= b.start || start >= b.end)
+      );
+    };
 
-          if (currentLoad + subject.units > instructor.maxLoad) continue;
+    const bookRoom = (roomId, day, start, end) => {
+      if (!roomBookings[roomId]) roomBookings[roomId] = {};
+      if (!roomBookings[roomId][day]) roomBookings[roomId][day] = [];
+      roomBookings[roomId][day].push({ start, end });
+    };
 
-          let bundleAssigned = false;
+    const bookInstructor = (instructorId, day, start, end) => {
+      if (!instructorBookings[instructorId]) instructorBookings[instructorId] = {};
+      if (!instructorBookings[instructorId][day]) instructorBookings[instructorId][day] = [];
+      instructorBookings[instructorId][day].push({ start, end });
+    };
 
-          for (const bundle of preferredBundles) {
-            if (bundle.length < subject.units) continue;
+    const splitUnitsToBlocks = (units) => {
+      let remaining = units;
+      const blocks = [];
 
-            const durationCombos = getDurationCombinations(subject.units);
-            let assignedCombo = null;
+      if (units <= 2) {
+        // If the subject is 1 or 2 units, give it all in one block
+        blocks.push(units);
+        return blocks;
+      }
 
-            for (const durations of durationCombos) {
-              if (durations.length > bundle.length) continue;
+      while (remaining > 0) {
+        // Force at least 2 hours per meeting unless the remaining is less than 2
+        const minBlock = Math.min(2, remaining);
+        const maxBlock = remaining; // can use all remaining if needed
+        const block = Math.max(minBlock, getRandomInt(minBlock, maxBlock));
+        blocks.push(block);
+        remaining -= block;
+      }
 
-              const sessions = bundle.slice(0, durations.length);
-              const sessionAssignments = [];
+      return blocks;
+    };
 
-              for (let i = 0; i < durations.length; i++) {
-                const day = sessions[i];
-                const availableSlots = timeSlots.filter(
-                  (s) =>
-                    s.day === day &&
-                    parseFloat(calculateDurationInHours(s.start, s.end)) >=
-                      durations[i]
-                );
 
-                let found = null;
-                for (const slot of availableSlots) {
-                  const { start, end } = slot;
-                  const instructorBusy = currentSchedule.some(
-                    (cls) => cls.day === day && overlap(cls, { start, end })
-                  );
+    for (const instructor of instructors) {
 
-                  if (instructorBusy) continue;
+      schedule[instructor.name] = [];
+      loadMap[instructor.name] = instructor.currentLoad;
+      dailySubjectCount[instructor.id] = {};
+      instructorBookings[instructor.id] = {};
+      for (const day of instructor.dayPref) {
+        dailySubjectCount[instructor.id][day] = 0;
+        instructorBookings[instructor.id][day] = [];
+      }
 
-                  const room = rooms.find((r) =>
-                    isRoomAvailable(r, day, start, end)
-                  );
-                  if (!room) continue;
+      for (const subject of subjects) {
+        if (loadMap[instructor.name] + subject.units > instructor.maxLoad) {
+          continue;
+        }
 
-                  found = { day, start, end, room, duration: durations[i] };
-                  break;
-                }
+        const section = getRandomSection(sections);
+        if (!sectionSubjectDays[section.id]) sectionSubjectDays[section.id] = {};
+        if (!sectionSubjectDays[section.id][subject.subject_code]) {
+          sectionSubjectDays[section.id][subject.subject_code] = new Set();
+        }
 
-                if (found) sessionAssignments.push(found);
-              }
+        const timeBlocks = splitUnitsToBlocks(subject.units);
+        let allBlocksAssigned = true;
 
-              if (sessionAssignments.length === durations.length) {
-                assignedCombo = sessionAssignments;
-                break;
-              }
+        for (const blockHours of timeBlocks) {
+          let blockAssigned = false;
+
+          for (const day of instructor.dayPref) {
+
+            // prevent same section+subject on same day (global)
+            if (sectionSubjectDays[section.id][subject.subject_code].has(day)) {
+              continue; // try another day
             }
 
-            if (assignedCombo) {
-              const section = getRandomSection();
+            if (dailySubjectCount[instructor.id][day] >= 3) continue; // max 3 subjects/day
 
-              const newClasses = assignedCombo.map((sa) => ({
-                day: sa.day,
-                start: sa.start,
-                end: sa.end,
+            const prefStartMin = toMinutes(instructor.timePref.start);
+            const prefEndMin = toMinutes(instructor.timePref.end);
+            const durationMin = blockHours * 60;
+
+            const earliestStart = prefStartMin;
+            const latestStart = prefEndMin - durationMin;
+            if (latestStart < earliestStart) continue;
+
+            const randomStartMin = getRandomInt(earliestStart, latestStart);
+            const randomEndMin = randomStartMin + durationMin;
+            const startTime = toHHMM(randomStartMin);
+            const endTime = toHHMM(randomEndMin);
+
+            const availableRoom = rooms.find(
+              (room) =>
+                isRoomFree(room.id, day, startTime, endTime) &&
+                isInstructorFree(instructor.id, day, startTime, endTime)
+            );
+
+            if (availableRoom) {
+              schedule[instructor.name].push({
                 subject: subject.subject,
-                subjectCode: subject.subject_code,
+                subject_code: subject.subject_code,
+                section_id: section.id,
                 section: section.name,
-                sectionId: section.id,
-                room: sa.room.room_id,
-                roomTitle: sa.room.room_title,
-                units: sa.duration,
-              }));
+                day,
+                start: startTime,
+                end: endTime,
+                room_title: availableRoom.room_title,
+                room_id: availableRoom.room_id,
+                units: blockHours,
+              });
 
-              schedule[instructor.name] = [...currentSchedule, ...newClasses];
-
-              for (const sa of assignedCombo) {
-                roomBookings[sa.day] = [
-                  ...(roomBookings[sa.day] || []),
-                  { start: sa.start, end: sa.end, room: sa.room },
-                ];
-              }
-
-              loadMap[instructor.name] = currentLoad + subject.units;
-              bundleAssigned = true;
+              loadMap[instructor.name] += blockHours;
+              dailySubjectCount[instructor.id][day]++;
+              bookRoom(availableRoom.id, day, startTime, endTime);
+              bookInstructor(instructor.id, day, startTime, endTime);
+              sectionSubjectDays[section.id][subject.subject_code].add(day);
+              blockAssigned = true;
               break;
             }
           }
 
-          if (bundleAssigned) break;
+          if (!blockAssigned) {
+            allBlocksAssigned = false;
+            break;
+          }
         }
 
-        if (assigned) break;
-      }
-
-      if (!assigned) {
-        unassigned.push(subject.subject_code);
-        conflictNarratives.push(
-          `Could not assign ${subject.subject} (${subject.subject_code}).`
-        );
+        if (!allBlocksAssigned) {
+          unassigned.push({
+            subject,
+            reason: `Could not fit all hours for ${instructor.name}`,
+          });
+        }
       }
     }
 
-    const conflictAnalysis = conflictNarratives.map((narrative) => {
-      let tag = "Other",
-        title = "Scheduling Issue",
-        severity = "Low";
-      if (narrative.includes("schedule conflict")) {
-        tag = "Time Conflict";
-        title = "Instructor Time Overlap";
-        severity = "High";
-      } else if (narrative.includes("unavailable on")) {
-        tag = "Day Conflict";
-        title = "Unavailable on Assigned Day";
-        severity = "Medium";
-      } else if (narrative.includes("unavailable at")) {
-        tag = "Time Preference Conflict";
-        title = "Outside Preferred Time";
-        severity = "Medium";
-      } else if (narrative.includes("max load")) {
-        tag = "Overload Conflict";
-        title = "Exceeds Max Load";
-        severity = "High";
-      } else if (narrative.includes("No available room")) {
-        tag = "Room Conflict";
-        title = "No Room Available";
-        severity = "High";
-      } else if (narrative.includes("Could not assign")) {
-        tag = "Unassigned";
-        title = "Subject Unassigned";
-        severity = "High";
-      }
-
-      return {
-        conflict_title: title,
-        conflict_desc: narrative,
-        affected_count: 1,
-        tags: tag,
-        severity: severity,
-      };
-    });
-
-    // First, delete all existing schedules
     await supabase.from("teacher_schedules").delete().neq("id", 0);
-
-    // Group similar schedules by teacher, subject, section, room, start/end time
     const groupedSchedules = {};
 
     Object.entries(schedule).forEach(([teacherName, classes]) => {
@@ -670,9 +617,10 @@ const runAutoSchedule = async (req, res) => {
 
       classes.forEach((cls) => {
         const subject = subjects.find(
-          (s) => s.subject_code === cls.subjectCode
+          (s) => s.subject_code === cls.subject_code
         );
-        const room = rooms.find((r) => r.room_id === cls.room);
+
+        const room = rooms.find((r) => r.room_id === cls.room_id);
         const section = sections.find((s) => s.name === cls.section);
 
         const key = `${teacher.id}-${subject?.id}-${section?.id}-${room?.id}-${cls.start}-${cls.end}`;
@@ -688,7 +636,7 @@ const runAutoSchedule = async (req, res) => {
             days: [],
             semester: subject?.semester || null,
             school_year: subject?.school_year || null,
-            total_count: Math.floor(Math.random() * 21) + 30,
+            total_count: section.total_count,
             total_duration: calculateDurationInTimeFormat(cls.start, cls.end),
           };
         }
@@ -697,7 +645,6 @@ const runAutoSchedule = async (req, res) => {
       });
     });
 
-    // Map full day names to abbreviations
     const dayAbbrevMap = {
       Monday: "M",
       Tuesday: "T",
@@ -706,7 +653,6 @@ const runAutoSchedule = async (req, res) => {
       Friday: "F",
     };
 
-    // Insert grouped schedules
     const insertPromises = Object.values(groupedSchedules).map((entry) => {
       const abbrevDays = entry.days
         .map((day) => dayAbbrevMap[day] || day.slice(0, 2))
@@ -725,41 +671,24 @@ const runAutoSchedule = async (req, res) => {
     const insertResults = await Promise.all(insertPromises);
     const insertErrors = insertResults.filter((r) => r.error);
 
-    await supabase.from("conflicts").delete().neq("id", 0);
-    const conflictInsertPromises = conflictAnalysis.map((conflict) =>
-      supabase.from("conflicts").insert(conflict)
-    );
-    const conflictInsertResults = await Promise.all(conflictInsertPromises);
-    const conflictInsertErrors = conflictInsertResults.filter((r) => r.error);
+    const updatePromises = Object.entries(loadMap).map(async ([teacherName, load]) => {
+      const teacher = instructors.find((t) => t.name === teacherName);
+      if (!teacher) return null;
 
-    if (insertErrors.length > 0 || conflictInsertErrors.length > 0) {
-      console.warn("Rolling back due to insert error.");
+      return supabase
+        .from("teacher_profile")
+        .update({ current_load: load })
+        .eq("id", teacher.id);
+    });
 
-      await supabase.from("teacher_schedules").delete().neq("id", 0);
-      await supabase.from("conflicts").delete().neq("id", 0);
-
-      return res.status(500).json({
-        title: "Rollback",
-        message: "Insert failed. Rollback performed.",
-        scheduleInsertErrors: insertErrors.length,
-        conflictInsertErrors: conflictInsertErrors.length,
-      });
-    }
+    await Promise.all(updatePromises);
 
     return res.status(200).json({
       title: "Success",
-      message: "Auto-scheduling complete.",
-      data: {
-        schedule,
-        loadMap,
-        unassigned,
-        roomBookings,
-        conflictNarratives,
-        diagnostics: conflictAnalysis,
-        insertedSchedules: insertPromises.length,
-        failedInsertions: insertErrors.length,
-      },
+      message: "Schedule generated",
+      data: { schedule, unassigned, loadMap },
     });
+
   } catch (error) {
     console.error("Scheduling error:", error);
     return res.status(500).json({

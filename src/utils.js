@@ -59,6 +59,15 @@ export const generateTimeSlots = () => {
   ]
 }
 
+export const getRandomInt = (min, max) => {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+export const toHHMM = (minutes) => {
+  const h = Math.floor(minutes / 60).toString().padStart(2, "0");
+  const m = (minutes % 60).toString().padStart(2, "0");
+  return `${h}:${m}`;
+};
 
 export function toMinutes(timeStr) {
   const [h, m] = timeStr.split(":").map(Number);
@@ -71,11 +80,6 @@ export function overlap(a, b) {
 
 export const generateTimeDaySlots = ({ startTime, endTime, slotDuration, days }) => {
   const slots = [];
-
-  const toMinutes = (timeStr) => {
-    const [h, m] = timeStr.split(":").map(Number);
-    return h * 60 + m;
-  };
 
   const toTimeStr = (minutes) => {
     const h = Math.floor(minutes / 60);
@@ -97,4 +101,28 @@ export const generateTimeDaySlots = ({ startTime, endTime, slotDuration, days })
   }
 
   return slots;
+};
+
+export const getRandomSection = (sections) =>
+  sections[Math.floor(Math.random() * sections.length)];
+
+
+export const isRoomAvailable = (room, day, start, end) => {
+  const bookings = roomBookings[day] || [];
+  return !bookings.some(
+    (b) => b.room.id === room.id && overlap(b, { start, end })
+  );
+};
+
+export const calculateDurationInTimeFormat = (start, end) => {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  const startMinutes = sh * 60 + sm;
+  const endMinutes = eh * 60 + em;
+  const diffMinutes = endMinutes - startMinutes;
+
+  // Convert back to HH:MM format
+  const hours = Math.floor(diffMinutes / 60);
+  const minutes = diffMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 };
