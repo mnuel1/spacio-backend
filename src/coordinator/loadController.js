@@ -698,20 +698,111 @@ const runAutoSchedule = async (req, res) => {
     });
   }
 };
-
 const getConflicts = async (req, res) => {
   try {
-    const { data, error } = await supabase.from("conflicts").select("*");
+    const { data: schedules, error } = await supabase
+      .from("teacher_schedules")
+      .select(`
+        id,
+        teacher_id,
+        subject_id,
+        section_id,
+        room_id,
+        days,
+        start_time,
+        end_time,
+        subjects ( subject_code, subject ),
+        sections ( name ),
+        teacher_profile ( user_profile ( name ) )
+      `);
 
     if (error) throw error;
 
+    const conflicts = [];
+    const toMinutes = (time) => {
+      const [h, m] = time.split(":").map(Number);
+      return h * 60 + m;
+    };
+
+    for (let i = 0; i < schedules.length; i++) {
+      for (let j = i + 1; j < schedules.length; j++) {
+        const a = schedules[i];
+        const b = schedules[j];
+        if (a.room_id === b.room_id && a.days === b.days) {
+          const overlap = !(
+            toMinutes(a.end_time) <= toMinutes(b.start_time) ||
+            toMinutes(a.start_time) >= toMinutes(b.end_time)
+          );
+          if (overlap) {
+            conflicts.push({
+              type: "Room Conflict",
+              message: `Room conflict: "${a.subjects.subject}" for section "${a.sections.name}" overlaps with "${b.subjects.subject}" for section "${b.sections.name}" in the same room on ${a.days} (${a.start_time}-${a.end_time} vs ${b.start_time}-${b.end_time})`,
+              entries: [a, b],
+            });
+          }
+        }
+      }
+    }
+
+    const seenSectionSubjectDay = {};
+    schedules.forEach((sched) => {
+      const key = `${sched.section_id}-${sched.subject_id}-${sched.days}`;
+      if (!seenSectionSubjectDay[key]) {
+        seenSectionSubjectDay[key] = sched;
+      } else {
+        const first = seenSectionSubjectDay[key];
+        conflicts.push({
+          type: "Duplicate Section/Subject Conflict",
+          message: `Duplicate subject for same section: "${sched.subjects.subject}" is scheduled twice for section "${sched.sections.name}" on ${sched.days}`,
+          entries: [first, sched],
+        });
+      }
+    });
+
+    for (let i = 0; i < schedules.length; i++) {
+      for (let j = i + 1; j < schedules.length; j++) {
+        const a = schedules[i];
+        const b = schedules[j];
+        if (a.teacher_id === b.teacher_id && a.days === b.days) {
+          const overlap = !(
+            toMinutes(a.end_time) <= toMinutes(b.start_time) ||
+            toMinutes(a.start_time) >= toMinutes(b.end_time)
+          );
+          if (overlap) {
+            conflicts.push({
+              type: "Instructor Conflict",
+              message: `Instructor conflict: "${a.teacher_profile.user_profile.name}" is scheduled to teach "${a.subjects.subject}" and "${b.subjects.subject}" at overlapping times on ${a.days} (${a.start_time}-${a.end_time} vs ${b.start_time}-${b.end_time})`,
+              entries: [a, b],
+            });
+          }
+        }
+      }
+    }
+
+    const { data: allSubjects, error: subjError } = await supabase
+      .from("subjects")
+      .select("id, subject");
+
+    if (subjError) throw subjError;
+
+    const assignedSubjectIds = new Set(schedules.map((s) => s.subject_id));
+    allSubjects.forEach((subj) => {
+      if (!assignedSubjectIds.has(subj.id)) {
+        conflicts.push({
+          type: "Unassigned Subject",
+          message: `Unassigned subject: "${subj.subject}" is not scheduled for any section or instructor.`,
+          entries: [subj],
+        });
+      }
+    });
+
     return res.status(200).json({
       title: "Success",
-      message: "Conflicts retrieved successfully.",
-      data: data,
+      message: "Conflicts.",
+      data: conflicts,
     });
   } catch (error) {
-    console.error("Error retrieving conflicts:", error.message);
+    console.error("Error fetching conflict:", error.message);
     return res.status(500).json({
       title: "Failed",
       message: "Something went wrong!",
@@ -719,6 +810,7 @@ const getConflicts = async (req, res) => {
     });
   }
 };
+
 
 const updateConflict = async (req, res) => {
   const { id } = req.params;

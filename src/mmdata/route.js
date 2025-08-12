@@ -5,7 +5,7 @@ const { getDataMaster } = require('../mmdata/mmdata');
 const router = express.Router()
 
 
-router.get("/mdata", getDataMaster)
+router.get("/", getDataMaster)
 
 
 module.exports = router
