@@ -36,7 +36,7 @@ const getLoad = async (req, res) => {
           ? profile.qualifications.split(",").map((q) => q.trim())
           : [];
 
-        const maxLoad = profile.positions?.max_load || 0;
+        const maxLoad = profile.positions?.min_load || 0;
 
         grouped[teacherId] = {
           id: teacherId,
@@ -64,6 +64,7 @@ const getLoad = async (req, res) => {
           canTeachSubjects: qualifications,
           yearsOfExperience: 8, // placeholder
           lastAssignmentDate: sched.start_time,
+          current_load: profile.current_load
         };
       }
 
