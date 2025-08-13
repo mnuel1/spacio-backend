@@ -270,7 +270,6 @@ const addSubject = async (req, res) => {
   }
 };
 
-
 const removeSubject = async (req, res) => {
   const { id } = req.params;
 
@@ -337,26 +336,30 @@ const reassignSubject = async (req, res) => {
 };
 
 const getTeachers = async () => {
-  const { data, error } = await supabase.from("teacher_profile").select(`
+  const { data, error } = await supabase
+    .from("teacher_profile")
+    .select(`
+      id,
+      position_id,
+      current_load,
+      avail_days,
+      user_profile:teacher_profile_user_id_fkey (
         id,
-        current_load,
-        avail_days,
-        user_profile:teacher_profile_user_id_fkey (
-          id,
-          name,
-          email
-        ),
-        positions:user_roles_position_id_fkey (
-          id,
-          position,
-          max_load,
-          min_load
-        ),
-        departments:user_roles_department_id_fkey (
-          id,
-          name
-        )
-      `);
+        name,
+        email
+      ),
+      positions:user_roles_position_id_fkey (
+        id,
+        position,
+        max_load,
+        min_load
+      ),
+      departments:user_roles_department_id_fkey (
+        id,
+        name
+      )
+    `)
+    .not("position_id", "is", null); // exclude teachers without position_id
 
   if (error) {
     console.error("Error fetching teachers:", error.message);
@@ -380,6 +383,7 @@ const getRooms = async () => {
     console.error("Error fetching rooms:", error.message);
     throw error;
   }
+
 
   return data;
 };
@@ -425,9 +429,13 @@ const getSections = async () => {
   return sectionsWithCount;
 };
 
-
 const runAutoSchedule = async (req, res) => {
   try {
+
+    const response = await resetSchedule()
+
+    if (!response) throw "Something went wrong"
+
     const [teachers, rooms, subjects, sections] = await Promise.all([
       getTeachers(),
       getRooms(),
@@ -444,10 +452,9 @@ const runAutoSchedule = async (req, res) => {
     const sectionSubjectDays = {};
 
     const instructors = teachers
-      .filter((teacher) => teacher.positions?.max_load)
       .map((teacher) => {
         const fullName = teacher.user_profile?.name || "Unnamed";
-        const maxLoad = teacher.positions?.max_load || 18;
+        const maxLoad = teacher.positions?.min_load;
         const availDays = parseAvailableDays(teacher.avail_days);
 
         return {
@@ -528,7 +535,6 @@ const runAutoSchedule = async (req, res) => {
         if (loadMap[instructor.name] + subject.units > instructor.maxLoad) {
           continue;
         }
-
         const section = getRandomSection(sections);
         if (!sectionSubjectDays[section.id]) sectionSubjectDays[section.id] = {};
         if (!sectionSubjectDays[section.id][subject.subject_code]) {
@@ -540,6 +546,12 @@ const runAutoSchedule = async (req, res) => {
 
         for (const blockHours of timeBlocks) {
           let blockAssigned = false;
+
+
+          if (loadMap[instructor.name] + blockHours > instructor.maxLoad) {
+            allBlocksAssigned = false;
+            break;
+          }
 
           for (const day of instructor.dayPref) {
 
@@ -570,6 +582,7 @@ const runAutoSchedule = async (req, res) => {
             );
 
             if (availableRoom) {
+
               schedule[instructor.name].push({
                 subject: subject.subject,
                 subject_code: subject.subject_code,
@@ -608,8 +621,11 @@ const runAutoSchedule = async (req, res) => {
       }
     }
 
-    await supabase.from("teacher_schedules").delete().neq("id", 0);
+    const success = await resetSchedule(loadMap, instructors)
+
+    if (!success) throw "Something went wrong"
     const groupedSchedules = {};
+
 
     Object.entries(schedule).forEach(([teacherName, classes]) => {
       const teacher = instructors.find((t) => t.name === teacherName);
@@ -698,6 +714,23 @@ const runAutoSchedule = async (req, res) => {
     });
   }
 };
+
+
+const resetSchedule = async () => {
+
+  await supabase
+    .from("teacher_schedules")
+    .delete()
+    .neq("id", 0);
+
+  await supabase
+    .from("teacher_profile")
+    .update({ current_load: 0 })
+    .not("position_id", "is", null);
+
+  return 1;
+};
+
 const getConflicts = async (req, res) => {
   try {
     const { data: schedules, error } = await supabase
