@@ -36,7 +36,7 @@ const getLoad = async (req, res) => {
           ? profile.qualifications.split(",").map((q) => q.trim())
           : [];
 
-        const maxLoad = profile.positions?.min_load || 0;
+        const maxLoad = profile.positions?.min_load + 12 || 0;
 
         grouped[teacherId] = {
           id: teacherId,
@@ -86,8 +86,8 @@ const getLoad = async (req, res) => {
         )}-${sched.end_time.slice(0, 5)}`,
         room: sched.rooms?.room_id,
       });
-
-      grouped[teacherId].totalUnits += sched.subjects?.units || 0;
+      
+      grouped[teacherId].totalUnits += hours || 0;
       grouped[teacherId].totalTeachingHours += hours;
 
       if (sched.created_at > grouped[teacherId].lastAssignmentDate) {
@@ -96,12 +96,12 @@ const getLoad = async (req, res) => {
     }
 
     const result = Object.values(grouped).map((fac) => {
-      const maxLoad = fac.maxLoad || 0;
+      const maxLoad = fac.maxLoad;
 
       let loadStatus = "Normal";
-      if (fac.totalUnits > maxLoad) {
+      if (fac.currentLoad > maxLoad) {
         loadStatus = "Overloaded";
-      } else if (fac.totalUnits < maxLoad) {
+      } else if (fac.currentLoad < maxLoad) {
         loadStatus = "Underloaded";
       }
       fac.loadStatus = loadStatus;
