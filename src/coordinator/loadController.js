@@ -431,7 +431,13 @@ const getSections = async () => {
 
 const runAutoSchedule = async (req, res) => {
   try {
-    const response = await resetSchedule();
+    const { selectedFacultyIds } = req.body || {};
+
+    // If selective scheduling, only reset schedules for selected faculty
+    const response =
+      selectedFacultyIds && selectedFacultyIds.length > 0
+        ? await resetScheduleSelective(selectedFacultyIds)
+        : await resetSchedule();
 
     if (!response) throw "Something went wrong";
 
@@ -442,6 +448,34 @@ const runAutoSchedule = async (req, res) => {
       getSections(),
     ]);
 
+    // Get existing schedules to avoid conflicts with non-selected faculty
+    const { data: existingSchedules, error: schedError } = await supabase.from(
+      "teacher_schedules"
+    ).select(`
+        teacher_id,
+        room_id,
+        days,
+        start_time,
+        end_time,
+        subject_id
+      `);
+
+    if (schedError) throw schedError;
+
+    // Filter teachers if selective scheduling
+    const filteredTeachers =
+      selectedFacultyIds && selectedFacultyIds.length > 0
+        ? teachers.filter((teacher) => selectedFacultyIds.includes(teacher.id))
+        : teachers;
+
+    // Get unassigned subjects (subjects not currently scheduled)
+    const assignedSubjectIds = new Set(
+      existingSchedules.map((s) => s.subject_id)
+    );
+    const unassignedSubjects = subjects.filter(
+      (subject) => !assignedSubjectIds.has(subject.id)
+    );
+
     const schedule = {};
     const loadMap = {};
     const dailySubjectCount = {};
@@ -450,7 +484,37 @@ const runAutoSchedule = async (req, res) => {
     const unassigned = [];
     const sectionSubjectDays = {};
 
-    const instructors = teachers.map((teacher) => {
+    // Initialize room bookings with existing schedules
+    existingSchedules.forEach((sched) => {
+      if (!roomBookings[sched.room_id]) roomBookings[sched.room_id] = {};
+      if (!roomBookings[sched.room_id][sched.days])
+        roomBookings[sched.room_id][sched.days] = [];
+      roomBookings[sched.room_id][sched.days].push({
+        start: sched.start_time,
+        end: sched.end_time,
+      });
+    });
+
+    // Initialize instructor bookings with existing schedules (for non-selected faculty)
+    existingSchedules.forEach((sched) => {
+      if (
+        selectedFacultyIds &&
+        selectedFacultyIds.length > 0 &&
+        selectedFacultyIds.includes(sched.teacher_id)
+      ) {
+        return; // Skip selected faculty as their schedules were reset
+      }
+      if (!instructorBookings[sched.teacher_id])
+        instructorBookings[sched.teacher_id] = {};
+      if (!instructorBookings[sched.teacher_id][sched.days])
+        instructorBookings[sched.teacher_id][sched.days] = [];
+      instructorBookings[sched.teacher_id][sched.days].push({
+        start: sched.start_time,
+        end: sched.end_time,
+      });
+    });
+
+    const instructors = filteredTeachers.map((teacher) => {
       const fullName = teacher.user_profile?.name || "Unnamed";
       const maxLoad = teacher.positions?.min_load;
       const availDays = parseAvailableDays(teacher.avail_days);
@@ -459,7 +523,7 @@ const runAutoSchedule = async (req, res) => {
         id: teacher.id,
         name: fullName,
         maxLoad,
-        currentLoad: teacher.current_load || 0,
+        currentLoad: 0, // Reset to 0 since we cleared their schedules
         dayPref: availDays.length
           ? availDays
           : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
@@ -524,13 +588,21 @@ const runAutoSchedule = async (req, res) => {
       schedule[instructor.name] = [];
       loadMap[instructor.name] = instructor.currentLoad;
       dailySubjectCount[instructor.id] = {};
-      instructorBookings[instructor.id] = {};
-      for (const day of instructor.dayPref) {
-        dailySubjectCount[instructor.id][day] = 0;
-        instructorBookings[instructor.id][day] = [];
+
+      // Initialize instructor bookings if not already done
+      if (!instructorBookings[instructor.id]) {
+        instructorBookings[instructor.id] = {};
       }
 
-      for (const subject of subjects) {
+      for (const day of instructor.dayPref) {
+        dailySubjectCount[instructor.id][day] = 0;
+        if (!instructorBookings[instructor.id][day]) {
+          instructorBookings[instructor.id][day] = [];
+        }
+      }
+
+      // Only assign unassigned subjects to avoid conflicts
+      for (const subject of unassignedSubjects) {
         if (loadMap[instructor.name] + subject.units > instructor.maxLoad) {
           continue;
         }
@@ -618,9 +690,7 @@ const runAutoSchedule = async (req, res) => {
       }
     }
 
-    const success = await resetSchedule(loadMap, instructors);
-
-    if (!success) throw "Something went wrong";
+    // Group schedules for database insertion
     const groupedSchedules = {};
 
     Object.entries(schedule).forEach(([teacherName, classes]) => {
@@ -683,6 +753,7 @@ const runAutoSchedule = async (req, res) => {
     const insertResults = await Promise.all(insertPromises);
     const insertErrors = insertResults.filter((r) => r.error);
 
+    // Only update loads for selected faculty
     const updatePromises = Object.entries(loadMap).map(
       async ([teacherName, load]) => {
         const teacher = instructors.find((t) => t.name === teacherName);
@@ -719,6 +790,22 @@ const resetSchedule = async () => {
     .from("teacher_profile")
     .update({ current_load: 0 })
     .not("position_id", "is", null);
+
+  return 1;
+};
+
+const resetScheduleSelective = async (selectedFacultyIds) => {
+  // Delete schedules only for selected faculty
+  await supabase
+    .from("teacher_schedules")
+    .delete()
+    .in("teacher_id", selectedFacultyIds);
+
+  // Reset current_load only for selected faculty
+  await supabase
+    .from("teacher_profile")
+    .update({ current_load: 0 })
+    .in("id", selectedFacultyIds);
 
   return 1;
 };
@@ -956,6 +1043,24 @@ const checkTeachersAvailability = async (req, res) => {
       data: null,
     });
   }
+};
+
+// Helper function to abbreviate days
+const abbreviateDays = (days) => {
+  const dayMap = {
+    Monday: "M",
+    Tuesday: "T",
+    Wednesday: "W",
+    Thursday: "Th",
+    Friday: "F",
+    Saturday: "S",
+    Sunday: "Su",
+  };
+
+  return days
+    .split(",")
+    .map((day) => dayMap[day.trim()] || day.trim())
+    .join("");
 };
 
 module.exports = {
