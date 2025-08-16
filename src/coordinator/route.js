@@ -10,6 +10,7 @@ const {
   updateFaculty,
   deleteFaculty,
   getFaculty,
+  checkFacultyDataIntegrity,
 } = require("../coordinator/facultyController");
 
 const {
@@ -51,6 +52,7 @@ router.post("/faculty", createFaculty);
 router.put("/faculty/:id", updateFaculty);
 router.delete("/faculty/:id", deleteFaculty);
 router.get("/faculty", getFaculty);
+router.get("/faculty/data-integrity/check", checkFacultyDataIntegrity);
 
 router.post("/schedule", createSChedule);
 router.put("/schedule/:id", updateSchedule);

@@ -487,9 +487,122 @@ const deleteFaculty = async (req, res) => {
   }
 };
 
+const checkFacultyDataIntegrity = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("user_profile")
+      .select(
+        `
+        id,
+        user_id,
+        name,
+        email,
+        status,
+        role,
+        teacher_profile (
+          id,
+          department_id,
+          position_id,
+          departments (
+            id,
+            name
+          ),
+          positions (
+            id,
+            position,
+            min_load,
+            max_load
+          )
+        )
+      `
+      )
+      .eq("status", true)
+      .eq("role", "Faculty");
+
+    if (error) throw error;
+
+    const facultyWithIssues = [];
+    const facultyStats = {
+      total: data.length,
+      withIssues: 0,
+      missingPosition: 0,
+      missingDepartment: 0,
+      missingBoth: 0,
+      noProfile: 0,
+    };
+
+    data.forEach((user) => {
+      const profile = user.teacher_profile?.[0];
+      const issues = [];
+
+      // Check if faculty has no teacher profile at all
+      if (!profile) {
+        issues.push("No teacher profile");
+        facultyStats.noProfile++;
+      } else {
+        // Check for missing department
+        if (!profile.department_id || !profile.departments) {
+          issues.push("Missing department");
+          facultyStats.missingDepartment++;
+        }
+
+        // Check for missing position
+        if (!profile.position_id || !profile.positions) {
+          issues.push("Missing position");
+          facultyStats.missingPosition++;
+        }
+
+        // Check if both are missing
+        if (
+          (!profile.department_id || !profile.departments) &&
+          (!profile.position_id || !profile.positions)
+        ) {
+          facultyStats.missingBoth++;
+        }
+      }
+
+      if (issues.length > 0) {
+        facultyStats.withIssues++;
+        facultyWithIssues.push({
+          id: user.id,
+          employeeId: user.user_id,
+          name: user.name,
+          email: user.email,
+          issues,
+          severity: issues.includes("No teacher profile")
+            ? "critical"
+            : issues.length >= 2
+            ? "high"
+            : "medium",
+          currentDepartment: profile?.departments?.name || null,
+          currentPosition: profile?.positions?.position || null,
+        });
+      }
+    });
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Faculty data integrity check completed.",
+      data: {
+        facultyWithIssues,
+        stats: facultyStats,
+        hasIssues: facultyWithIssues.length > 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error checking faculty data integrity:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
 module.exports = {
   createFaculty,
   updateFaculty,
   deleteFaculty,
   getFaculty,
+  checkFacultyDataIntegrity,
 };
