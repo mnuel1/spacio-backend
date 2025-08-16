@@ -1,79 +1,80 @@
-const express = require('express')
+const express = require("express");
 const {
-    createRoom,
-    editRoom,
-    deleteRoom,
-    getRooms
-} = require("../coordinator/roomController")
+  createRoom,
+  editRoom,
+  deleteRoom,
+  getRooms,
+} = require("../coordinator/roomController");
 const {
-    createFaculty,
-    updateFaculty,
-    deleteFaculty,
-    getFaculty
-} = require("../coordinator/facultyController")
-
-const {
-    createSChedule,
-    updateSchedule,
-    deleteSchedule,
-    getSchedule,
-} = require("../coordinator/scheduleController")
+  createFaculty,
+  updateFaculty,
+  deleteFaculty,
+  getFaculty,
+} = require("../coordinator/facultyController");
 
 const {
-    getLoad,
-    addSubject,
-    removeSubject,
-    reassignSubject,
-    runAutoSchedule,
-    getConflicts,
-    updateConflict
-} = require("../coordinator/loadController")
+  createSChedule,
+  updateSchedule,
+  deleteSchedule,
+  getSchedule,
+} = require("../coordinator/scheduleController");
 
 const {
-    getUsers,
-    deactivateUser,
-    deleteUser,
-    addUsersByFile
-} = require("../coordinator/userController")
+  getLoad,
+  addSubject,
+  removeSubject,
+  reassignSubject,
+  runAutoSchedule,
+  getConflicts,
+  updateConflict,
+  checkTeachersAvailability,
+} = require("../coordinator/loadController");
 
 const {
-    getDashboard
-} = require("../coordinator/dashboardController")
+  getUsers,
+  deactivateUser,
+  deleteUser,
+  addUsersByFile,
+} = require("../coordinator/userController");
 
-const router = express.Router()
-const multer = require("multer")
+const { getDashboard } = require("../coordinator/dashboardController");
 
-router.post("/room", createRoom)
-router.put("/room/:id", editRoom)
-router.delete("/room/:id", deleteRoom)
-router.get("/rooms", getRooms)
+const router = express.Router();
+const multer = require("multer");
 
-router.post("/faculty", createFaculty)
-router.put("/faculty/:id", updateFaculty)
-router.delete("/faculty/:id", deleteFaculty)
-router.get("/faculty", getFaculty)
+router.post("/room", createRoom);
+router.put("/room/:id", editRoom);
+router.delete("/room/:id", deleteRoom);
+router.get("/rooms", getRooms);
 
-router.post("/schedule", createSChedule)
-router.put("/schedule/:id", updateSchedule)
-router.delete("/schedule/:id", deleteSchedule)
-router.get("/schedule", getSchedule)
+router.post("/faculty", createFaculty);
+router.put("/faculty/:id", updateFaculty);
+router.delete("/faculty/:id", deleteFaculty);
+router.get("/faculty", getFaculty);
 
-router.post("/load/add/subject", addSubject)
-router.delete("/load/remove/subject/:id", removeSubject)
-router.put("/load/reassign/subject/:id", reassignSubject)
-router.get("/load", getLoad)
+router.post("/schedule", createSChedule);
+router.put("/schedule/:id", updateSchedule);
+router.delete("/schedule/:id", deleteSchedule);
+router.get("/schedule", getSchedule);
 
-router.get("/conflicts", getConflicts)
-router.put("/conflicts/:id", updateConflict)
+router.post("/load/add/subject", addSubject);
+router.delete("/load/remove/subject/:id", removeSubject);
+router.put("/load/reassign/subject/:id", reassignSubject);
+router.get("/load", getLoad);
 
-router.post("/auto/schedule", runAutoSchedule)
+router.get("/conflicts", getConflicts);
+router.put("/conflicts/:id", updateConflict);
 
-const upload = multer({ dest: 'uploads/' });
+router.get("/teachers/availability/check", checkTeachersAvailability);
 
-router.post("/users/signup", upload.single('file'), addUsersByFile)
-router.get("/users", getUsers)
-router.put("/users/deactivate/:id", deactivateUser)
-router.delete("/users/:id", deleteUser)
+router.post("/auto/schedule", runAutoSchedule);
 
-router.get("/dashboard", getDashboard)
-module.exports = router
+const upload = multer({ dest: "uploads/" });
+
+router.post("/users/signup", upload.single("file"), addUsersByFile);
+router.get("/users", getUsers);
+router.put("/users/deactivate/:id", deactivateUser);
+router.delete("/users/:id", deleteUser);
+
+router.get("/dashboard", getDashboard);
+module.exports = router;

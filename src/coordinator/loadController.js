@@ -9,7 +9,7 @@ const {
   generateTimeDaySlots,
   getRandomSection,
   isRoomAvailable,
-  calculateDurationInTimeFormat
+  calculateDurationInTimeFormat,
 } = require("../utils.js");
 
 const getLoad = async (req, res) => {
@@ -64,7 +64,7 @@ const getLoad = async (req, res) => {
           canTeachSubjects: qualifications,
           yearsOfExperience: 8, // placeholder
           lastAssignmentDate: sched.start_time,
-          current_load: profile.current_load
+          current_load: profile.current_load,
         };
       }
 
@@ -86,7 +86,7 @@ const getLoad = async (req, res) => {
         )}-${sched.end_time.slice(0, 5)}`,
         room: sched.rooms?.room_id,
       });
-      
+
       grouped[teacherId].totalUnits += hours || 0;
       grouped[teacherId].totalTeachingHours += hours;
 
@@ -145,13 +145,15 @@ const addSubject = async (req, res) => {
     // Get teacher + min_load from position
     const { data: teacherData, error: teacherError } = await supabase
       .from("teacher_profile")
-      .select(`
+      .select(
+        `
         current_load,
         position_id,
         positions!inner (
           min_load
         )
-      `)
+      `
+      )
       .eq("id", teacher_id)
       .single();
 
@@ -186,7 +188,9 @@ const addSubject = async (req, res) => {
     if (current_load + units > min_load + 12) {
       return res.status(400).json({
         title: "Failed",
-        message: `Cannot assign subject. Adding ${units} units will exceed the allowed load (${min_load + 12}).`,
+        message: `Cannot assign subject. Adding ${units} units will exceed the allowed load (${
+          min_load + 12
+        }).`,
       });
     }
 
@@ -242,7 +246,7 @@ const addSubject = async (req, res) => {
         total_count,
         semester,
         school_year,
-        total_duration
+        total_duration,
       })
       .select();
 
@@ -259,7 +263,6 @@ const addSubject = async (req, res) => {
       message: "Subject added successfully.",
       data: data,
     });
-
   } catch (error) {
     console.error("Error adding subject:", error.message);
 
@@ -305,16 +308,13 @@ const reassignSubject = async (req, res) => {
   let updateFields = { ...req.body };
 
   try {
-
     if (updateFields.days) {
       updateFields.days = abbreviateDays(updateFields.days);
     }
 
     const { data, error } = await supabase
       .from("teacher_schedules")
-      .update(
-        updateFields
-      )
+      .update(updateFields)
       .eq("id", id)
       .select();
 
@@ -339,7 +339,8 @@ const reassignSubject = async (req, res) => {
 const getTeachers = async () => {
   const { data, error } = await supabase
     .from("teacher_profile")
-    .select(`
+    .select(
+      `
       id,
       position_id,
       current_load,
@@ -359,7 +360,8 @@ const getTeachers = async () => {
         id,
         name
       )
-    `)
+    `
+    )
     .not("position_id", "is", null); // exclude teachers without position_id
 
   if (error) {
@@ -385,7 +387,6 @@ const getRooms = async () => {
     throw error;
   }
 
-
   return data;
 };
 
@@ -409,9 +410,7 @@ const getSubjects = async () => {
 };
 
 const getSections = async () => {
-  const { data, error } = await supabase
-    .from("sections")
-    .select(`
+  const { data, error } = await supabase.from("sections").select(`
       id,
       name,
       student_sections:student_sections(count)
@@ -422,9 +421,9 @@ const getSections = async () => {
     throw error;
   }
 
-  const sectionsWithCount = data.map(section => ({
+  const sectionsWithCount = data.map((section) => ({
     ...section,
-    total_count: section.student_sections[0]?.count || 0
+    total_count: section.student_sections[0]?.count || 0,
   }));
 
   return sectionsWithCount;
@@ -432,10 +431,9 @@ const getSections = async () => {
 
 const runAutoSchedule = async (req, res) => {
   try {
+    const response = await resetSchedule();
 
-    const response = await resetSchedule()
-
-    if (!response) throw "Something went wrong"
+    if (!response) throw "Something went wrong";
 
     const [teachers, rooms, subjects, sections] = await Promise.all([
       getTeachers(),
@@ -452,23 +450,22 @@ const runAutoSchedule = async (req, res) => {
     const unassigned = [];
     const sectionSubjectDays = {};
 
-    const instructors = teachers
-      .map((teacher) => {
-        const fullName = teacher.user_profile?.name || "Unnamed";
-        const maxLoad = teacher.positions?.min_load;
-        const availDays = parseAvailableDays(teacher.avail_days);
+    const instructors = teachers.map((teacher) => {
+      const fullName = teacher.user_profile?.name || "Unnamed";
+      const maxLoad = teacher.positions?.min_load;
+      const availDays = parseAvailableDays(teacher.avail_days);
 
-        return {
-          id: teacher.id,
-          name: fullName,
-          maxLoad,
-          currentLoad: teacher.current_load || 0,
-          dayPref: availDays.length
-            ? availDays
-            : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-          timePref: { start: "08:00", end: "18:00" },
-        };
-      });
+      return {
+        id: teacher.id,
+        name: fullName,
+        maxLoad,
+        currentLoad: teacher.current_load || 0,
+        dayPref: availDays.length
+          ? availDays
+          : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+        timePref: { start: "08:00", end: "18:00" },
+      };
+    });
 
     const isRoomFree = (roomId, day, start, end) => {
       if (!roomBookings[roomId]) roomBookings[roomId] = {};
@@ -479,7 +476,8 @@ const runAutoSchedule = async (req, res) => {
     };
 
     const isInstructorFree = (instructorId, day, start, end) => {
-      if (!instructorBookings[instructorId]) instructorBookings[instructorId] = {};
+      if (!instructorBookings[instructorId])
+        instructorBookings[instructorId] = {};
       if (!instructorBookings[instructorId][day]) return true;
       return !instructorBookings[instructorId][day].some(
         (b) => !(end <= b.start || start >= b.end)
@@ -493,8 +491,10 @@ const runAutoSchedule = async (req, res) => {
     };
 
     const bookInstructor = (instructorId, day, start, end) => {
-      if (!instructorBookings[instructorId]) instructorBookings[instructorId] = {};
-      if (!instructorBookings[instructorId][day]) instructorBookings[instructorId][day] = [];
+      if (!instructorBookings[instructorId])
+        instructorBookings[instructorId] = {};
+      if (!instructorBookings[instructorId][day])
+        instructorBookings[instructorId][day] = [];
       instructorBookings[instructorId][day].push({ start, end });
     };
 
@@ -520,9 +520,7 @@ const runAutoSchedule = async (req, res) => {
       return blocks;
     };
 
-
     for (const instructor of instructors) {
-
       schedule[instructor.name] = [];
       loadMap[instructor.name] = instructor.currentLoad;
       dailySubjectCount[instructor.id] = {};
@@ -537,7 +535,8 @@ const runAutoSchedule = async (req, res) => {
           continue;
         }
         const section = getRandomSection(sections);
-        if (!sectionSubjectDays[section.id]) sectionSubjectDays[section.id] = {};
+        if (!sectionSubjectDays[section.id])
+          sectionSubjectDays[section.id] = {};
         if (!sectionSubjectDays[section.id][subject.subject_code]) {
           sectionSubjectDays[section.id][subject.subject_code] = new Set();
         }
@@ -548,14 +547,12 @@ const runAutoSchedule = async (req, res) => {
         for (const blockHours of timeBlocks) {
           let blockAssigned = false;
 
-
           if (loadMap[instructor.name] + blockHours > instructor.maxLoad) {
             allBlocksAssigned = false;
             break;
           }
 
           for (const day of instructor.dayPref) {
-
             // prevent same section+subject on same day (global)
             if (sectionSubjectDays[section.id][subject.subject_code].has(day)) {
               continue; // try another day
@@ -583,7 +580,6 @@ const runAutoSchedule = async (req, res) => {
             );
 
             if (availableRoom) {
-
               schedule[instructor.name].push({
                 subject: subject.subject,
                 subject_code: subject.subject_code,
@@ -622,11 +618,10 @@ const runAutoSchedule = async (req, res) => {
       }
     }
 
-    const success = await resetSchedule(loadMap, instructors)
+    const success = await resetSchedule(loadMap, instructors);
 
-    if (!success) throw "Something went wrong"
+    if (!success) throw "Something went wrong";
     const groupedSchedules = {};
-
 
     Object.entries(schedule).forEach(([teacherName, classes]) => {
       const teacher = instructors.find((t) => t.name === teacherName);
@@ -688,15 +683,17 @@ const runAutoSchedule = async (req, res) => {
     const insertResults = await Promise.all(insertPromises);
     const insertErrors = insertResults.filter((r) => r.error);
 
-    const updatePromises = Object.entries(loadMap).map(async ([teacherName, load]) => {
-      const teacher = instructors.find((t) => t.name === teacherName);
-      if (!teacher) return null;
+    const updatePromises = Object.entries(loadMap).map(
+      async ([teacherName, load]) => {
+        const teacher = instructors.find((t) => t.name === teacherName);
+        if (!teacher) return null;
 
-      return supabase
-        .from("teacher_profile")
-        .update({ current_load: load })
-        .eq("id", teacher.id);
-    });
+        return supabase
+          .from("teacher_profile")
+          .update({ current_load: load })
+          .eq("id", teacher.id);
+      }
+    );
 
     await Promise.all(updatePromises);
 
@@ -705,7 +702,6 @@ const runAutoSchedule = async (req, res) => {
       message: "Schedule generated",
       data: { schedule, unassigned, loadMap },
     });
-
   } catch (error) {
     console.error("Scheduling error:", error);
     return res.status(500).json({
@@ -716,13 +712,8 @@ const runAutoSchedule = async (req, res) => {
   }
 };
 
-
 const resetSchedule = async () => {
-
-  await supabase
-    .from("teacher_schedules")
-    .delete()
-    .neq("id", 0);
+  await supabase.from("teacher_schedules").delete().neq("id", 0);
 
   await supabase
     .from("teacher_profile")
@@ -734,8 +725,7 @@ const resetSchedule = async () => {
 
 const getConflicts = async (req, res) => {
   try {
-    const { data: schedules, error } = await supabase
-      .from("teacher_schedules")
+    const { data: schedules, error } = await supabase.from("teacher_schedules")
       .select(`
         id,
         teacher_id,
@@ -845,7 +835,6 @@ const getConflicts = async (req, res) => {
   }
 };
 
-
 const updateConflict = async (req, res) => {
   const { id } = req.params;
   const { status, assigned_to, solution_details, notes, resolution_type } =
@@ -898,6 +887,77 @@ const updateConflict = async (req, res) => {
   }
 };
 
+const checkTeachersAvailability = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("teacher_profile")
+      .select(
+        `
+        id,
+        avail_days,
+        unavail_days,
+        pref_time,
+        user_profile:teacher_profile_user_id_fkey (
+          id,
+          name,
+          email,
+          user_id
+        ),
+        positions:user_roles_position_id_fkey (
+          position
+        ),
+        departments:user_roles_department_id_fkey (
+          name
+        )
+      `
+      )
+      .not("position_id", "is", null); // exclude teachers without position_id
+
+    if (error) throw error;
+
+    // Filter teachers with no availability settings
+    const teachersWithoutAvailability = data.filter((teacher) => {
+      const hasAvailDays =
+        teacher.avail_days && teacher.avail_days.trim() !== "";
+      const hasPrefTime = teacher.pref_time && teacher.pref_time.trim() !== "";
+
+      // Consider a teacher as having no availability if they lack both avail_days and pref_time
+      return !hasAvailDays && !hasPrefTime;
+    });
+
+    const formattedTeachers = teachersWithoutAvailability.map((teacher) => ({
+      id: teacher.id,
+      employeeId: teacher.user_profile?.user_id || "",
+      name: teacher.user_profile?.name || "Unnamed",
+      email: teacher.user_profile?.email || "",
+      department: teacher.departments?.name || "No Department",
+      position: teacher.positions?.position || "No Position",
+      availDays: teacher.avail_days || "",
+      unavailDays: teacher.unavail_days || "",
+      prefTime: teacher.pref_time || "",
+      hasAvailability: false,
+    }));
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Teachers availability check completed.",
+      data: {
+        teachersWithoutAvailability: formattedTeachers,
+        totalTeachers: data.length,
+        teachersWithoutAvailabilityCount: formattedTeachers.length,
+        hasIssues: formattedTeachers.length > 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error checking teachers availability:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
 module.exports = {
   getLoad,
   addSubject,
@@ -906,4 +966,5 @@ module.exports = {
   runAutoSchedule,
   getConflicts,
   updateConflict,
+  checkTeachersAvailability,
 };
