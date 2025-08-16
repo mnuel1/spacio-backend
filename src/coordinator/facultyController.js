@@ -147,19 +147,15 @@ const createFaculty = async (req, res) => {
 
     const authUserId = authData.user.id;
 
-    // Step 2: Create user profile
+    // Step 2: Update the auto-created user profile with missing fields
     const { data: userData, error: userError } = await supabase
       .from("user_profile")
-      .insert([
-        {
-          identity_id: authUserId,
-          name: fullName,
-          email,
-          phone,
-          status: true,
-          role: "Faculty",
-        },
-      ])
+      .update({
+        name: fullName,
+        phone,
+        status: true,
+      })
+      .eq("identity_id", authUserId)
       .select("id")
       .single();
 
@@ -170,12 +166,12 @@ const createFaculty = async (req, res) => {
     // Step 3: Create teacher profile
     const { data: profileData, error: profileError } = await supabase
       .from("teacher_profile")
-      .insert([{ user_id: userId, department_id, position_id }]);
+      .update({ department_id, position_id })
+      .eq("user_id", userId);
 
     if (profileError) {
-      // If teacher profile creation fails, cleanup auth user and user profile
+      // If teacher profile creation fails, cleanup auth user (which will cascade delete user profile via trigger)
       await supabase.auth.admin.deleteUser(authUserId);
-      await supabase.from("user_profile").delete().eq("id", userId);
       throw profileError;
     }
 
@@ -464,24 +460,86 @@ const deleteFaculty = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { data, error } = await supabase
+    // First, get the user's identity_id from user_profile
+    const { data: userProfile, error: profileError } = await supabase
       .from("user_profile")
-      .update({ status: false })
+      .select("identity_id, name")
+      .eq("id", id)
+      .single();
+
+    if (profileError) throw profileError;
+
+    if (!userProfile || !userProfile.identity_id) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Faculty not found or identity_id is missing.",
+        data: null,
+      });
+    }
+
+    console.log(
+      "Attempting to delete user with identity_id:",
+      userProfile.identity_id
+    );
+
+    // Manual cascade deletion approach (if trigger-based doesn't work)
+    // Step 1: Delete teacher_profile first
+    const { error: teacherError } = await supabase
+      .from("teacher_profile")
+      .delete()
+      .eq("user_id", id);
+
+    if (teacherError) {
+      console.error("Error deleting teacher profile:", teacherError);
+      // Continue anyway, as the teacher profile might not exist
+    }
+
+    // Step 2: Delete user_profile
+    const { error: userProfileError } = await supabase
+      .from("user_profile")
+      .delete()
       .eq("id", id);
 
-    if (error) throw error;
+    if (userProfileError) {
+      console.error("Error deleting user profile:", userProfileError);
+      throw new Error(
+        `User profile deletion failed: ${userProfileError.message}`
+      );
+    }
+
+    // Step 3: Delete the auth user
+    const { error: authError } = await supabase.auth.admin.deleteUser(
+      userProfile.identity_id
+    );
+
+    if (authError) {
+      console.error("Auth deletion error details:", {
+        message: authError.message,
+        status: authError.status,
+        code: authError.code,
+        details: authError,
+      });
+      // If auth deletion fails but database records are deleted, still consider it a success
+      console.warn(
+        "Auth user deletion failed, but database records were cleaned up"
+      );
+    }
 
     return res.status(200).json({
       title: "Success",
-      message: "Faculty deleted successfully (soft delete).",
-      data,
+      message: `Faculty ${userProfile.name} deleted successfully.`,
+      data: {
+        deletedUserId: id,
+        deletedIdentityId: userProfile.identity_id,
+        authDeleted: !authError,
+      },
     });
   } catch (error) {
     console.error("Error deleting faculty:", error.message);
 
     return res.status(500).json({
       title: "Failed",
-      message: "Something went wrong!",
+      message: error.message || "Something went wrong!",
       data: null,
     });
   }

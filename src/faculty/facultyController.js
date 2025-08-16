@@ -536,10 +536,79 @@ const savePrefTImeDay = async (req, res) => {
   }
 };
 
+const checkMyAvailabilityStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from("teacher_profile")
+      .select(
+        `
+        id,
+        avail_days,
+        unavail_days,
+        pref_time,
+        user_profile:teacher_profile_user_id_fkey (
+          id,
+          name,
+          email,
+          user_id
+        )
+      `
+      )
+      .eq("id", id)
+      .single();
+
+    if (error) throw error;
+
+    if (!data) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Faculty profile not found.",
+        data: null,
+      });
+    }
+
+    // Check if faculty has availability settings
+    const hasAvailDays = data.avail_days && data.avail_days.trim() !== "";
+    const hasPrefTime = data.pref_time && data.pref_time.trim() !== "";
+
+    // Faculty has availability if they have both avail_days and pref_time
+    const hasAvailability = hasAvailDays && hasPrefTime;
+
+    const response = {
+      id: data.id,
+      employeeId: data.user_profile?.user_id || "",
+      name: data.user_profile?.name || "Unnamed",
+      email: data.user_profile?.email || "",
+      availDays: data.avail_days || "",
+      unavailDays: data.unavail_days || "",
+      prefTime: data.pref_time || "",
+      hasAvailability,
+      needsAvailabilitySetup: !hasAvailability,
+      availabilityStatus: hasAvailability ? "complete" : "incomplete",
+    };
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Availability status retrieved successfully.",
+      data: response,
+    });
+  } catch (error) {
+    console.error("Error checking faculty availability status:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
 module.exports = {
   getDashboard,
   getMySchedules,
   getMyLoad,
   getPrefTimeDay,
   savePrefTImeDay,
+  checkMyAvailabilityStatus,
 };
