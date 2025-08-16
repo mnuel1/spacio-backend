@@ -14,102 +14,160 @@ const {
 
 const getLoad = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from("teacher_schedules")
-      .select(getLoadQuery);
+    // Get all faculty profiles first
+    const { data: facultyData, error: facultyError } = await supabase
+      .from("teacher_profile")
+      .select(
+        `
+        id,
+        current_load,
+        contract_type,
+        specializations, 
+        qualifications,
+        avail_days,
+        unavail_days,
+        pref_time,
+        user_profile:teacher_profile_user_id_fkey (
+          id, user_id, name, email, profile_image, status
+        ),
+        positions:user_roles_position_id_fkey (
+          id, position, max_load, min_load
+        ),
+        departments:user_roles_department_id_fkey (
+          id, name
+        )
+      `
+      )
+      .not("position_id", "is", null); // exclude teachers without position_id
 
-    if (error) throw error;
+    if (facultyError) throw facultyError;
 
-    const grouped = {};
+    // Get all schedules separately
+    const { data: scheduleData, error: scheduleError } = await supabase.from(
+      "teacher_schedules"
+    ).select(`
+        id,
+        teacher_id,
+        days,
+        start_time,
+        end_time,
+        total_count,
+        total_duration,
+        semester,
+        school_year,
+        created_at,
+        subjects:teacher_schedules_subject_id_fkey (
+          id, subject_code, subject, total_hours, units, semester, school_year
+        ),
+        sections:teacher_schedules_section_id_fkey (
+          id, name
+        ),
+        rooms:teacher_schedules_room_id_fkey (
+          id, room_id, room_title, room_desc, status, floor
+        )
+      `);
 
-    for (const sched of data) {
-      const profile = sched.teacher_profile;
-      const user = profile.user_profile;
-      const teacherId = user.id;
+    if (scheduleError) throw scheduleError;
 
-      if (!grouped[teacherId]) {
-        const specializations = profile.specializations
-          ? profile.specializations.replace(/(^"|"$)/g, "").split('", "')
-          : [];
-
-        const qualifications = profile.qualifications
-          ? profile.qualifications.split(",").map((q) => q.trim())
-          : [];
-
-        const maxLoad = profile.positions?.min_load + 12 || 0;
-
-        grouped[teacherId] = {
-          id: teacherId,
-          employeeId: user.user_id,
-          firstName: user.name?.split(" ")[0] || "",
-          lastName: user.name?.split(" ")[1] || "",
-          middleName: "", // Optional field
-          email: user.email,
-          department: profile.departments?.name,
-          position: profile.positions?.position,
-          profileImage: user.profile_image,
-          assignedSubjects: [],
-          totalUnits: 0,
-          totalTeachingHours: 0,
-          maxLoad,
-          availableUnits: 0,
-          loadStatus: "",
-          utilizationPercentage: 0,
-          preferredDays: parseAvailableDays(profile.avail_days || ""),
-          preferredTimeSlots: profile.pref_time ? [profile.pref_time] : [],
-          unavailableDays: parseAvailableDays(profile.unavail_days || ""),
-          contractType: profile.contract_type,
-          employmentStatus: user.status ? "Active" : "Inactive",
-          specializations,
-          canTeachSubjects: qualifications,
-          yearsOfExperience: 8, // placeholder
-          lastAssignmentDate: sched.start_time,
-          current_load: profile.current_load,
-        };
+    // Group schedules by teacher_id
+    const schedulesByTeacher = {};
+    scheduleData.forEach((sched) => {
+      if (!schedulesByTeacher[sched.teacher_id]) {
+        schedulesByTeacher[sched.teacher_id] = [];
       }
+      schedulesByTeacher[sched.teacher_id].push(sched);
+    });
 
-      const hours = parseInt(sched.total_duration?.split(":")[0]) || 0;
+    // Build result with all faculty, including those with no schedules
+    const result = facultyData.map((profile) => {
+      const user = profile.user_profile;
+      const teacherId = profile.id;
+      const teacherSchedules = schedulesByTeacher[teacherId] || [];
 
-      grouped[teacherId].assignedSubjects.push({
-        id: sched.subjects?.id,
-        name: sched.subjects?.subject,
-        code: sched.subjects?.subject_code,
-        units: sched.subjects?.units,
-        hours,
-        semester: sched.subjects?.semester,
-        academicYear: sched.subjects?.school_year,
-        section: sched.sections?.name,
-        enrollmentCount: sched.total_count,
-        scheduleTime: `${sched.days} ${sched.start_time.slice(
-          0,
-          5
-        )}-${sched.end_time.slice(0, 5)}`,
-        room: sched.rooms?.room_id,
+      const specializations = profile.specializations
+        ? profile.specializations.replace(/(^"|"$)/g, "").split('", "')
+        : [];
+
+      const qualifications = profile.qualifications
+        ? profile.qualifications.split(",").map((q) => q.trim())
+        : [];
+
+      const maxLoad = (profile.positions?.min_load || 0) + 12;
+
+      // Calculate assigned subjects and totals
+      const assignedSubjects = [];
+      let totalUnits = 0;
+      let totalTeachingHours = 0;
+      let lastAssignmentDate = null;
+
+      teacherSchedules.forEach((sched) => {
+        const hours = parseInt(sched.total_duration?.split(":")[0]) || 0;
+
+        assignedSubjects.push({
+          id: sched.subjects?.id,
+          name: sched.subjects?.subject,
+          code: sched.subjects?.subject_code,
+          units: sched.subjects?.units,
+          hours,
+          semester: sched.subjects?.semester,
+          academicYear: sched.subjects?.school_year,
+          section: sched.sections?.name,
+          enrollmentCount: sched.total_count,
+          scheduleTime: `${sched.days} ${sched.start_time.slice(
+            0,
+            5
+          )}-${sched.end_time.slice(0, 5)}`,
+          room: sched.rooms?.room_id,
+        });
+
+        totalUnits += hours || 0;
+        totalTeachingHours += hours;
+
+        if (!lastAssignmentDate || sched.created_at > lastAssignmentDate) {
+          lastAssignmentDate = sched.created_at;
+        }
       });
 
-      grouped[teacherId].totalUnits += hours || 0;
-      grouped[teacherId].totalTeachingHours += hours;
-
-      if (sched.created_at > grouped[teacherId].lastAssignmentDate) {
-        grouped[teacherId].lastAssignmentDate = sched.created_at;
-      }
-    }
-
-    const result = Object.values(grouped).map((fac) => {
-      const maxLoad = fac.maxLoad;
-
+      // Determine load status
+      const currentLoad = profile.current_load || 0;
       let loadStatus = "Normal";
-      if (fac.currentLoad > maxLoad) {
+      if (currentLoad > maxLoad) {
         loadStatus = "Overloaded";
-      } else if (fac.currentLoad < maxLoad) {
+      } else if (currentLoad < maxLoad) {
         loadStatus = "Underloaded";
       }
-      fac.loadStatus = loadStatus;
-      fac.availableUnits = fac.maxLoad - fac.totalUnits;
-      fac.utilizationPercentage = parseFloat(
-        ((fac.totalUnits / fac.maxLoad) * 100).toFixed(1)
-      );
-      return fac;
+
+      return {
+        id: teacherId, // This is the teacher_profile.id, which is what we need for scheduling
+        employeeId: user?.user_id || "",
+        firstName: user?.name?.split(" ")[0] || "",
+        lastName: user?.name?.split(" ")[1] || "",
+        middleName: "", // Optional field
+        email: user?.email || "",
+        department: profile.departments?.name || "No Department",
+        position: profile.positions?.position || "No Position",
+        profileImage: user?.profile_image,
+        assignedSubjects,
+        totalUnits,
+        totalTeachingHours,
+        maxLoad,
+        availableUnits: maxLoad - totalUnits,
+        loadStatus,
+        utilizationPercentage:
+          maxLoad > 0
+            ? parseFloat(((totalUnits / maxLoad) * 100).toFixed(1))
+            : 0,
+        preferredDays: parseAvailableDays(profile.avail_days || ""),
+        preferredTimeSlots: profile.pref_time ? [profile.pref_time] : [],
+        unavailableDays: parseAvailableDays(profile.unavail_days || ""),
+        contractType: profile.contract_type,
+        employmentStatus: user?.status ? "Active" : "Inactive",
+        specializations,
+        canTeachSubjects: qualifications,
+        yearsOfExperience: 8, // placeholder
+        lastAssignmentDate: lastAssignmentDate || new Date().toISOString(),
+        current_load: currentLoad,
+      };
     });
 
     return res.status(200).json({
