@@ -401,12 +401,15 @@ const getTeachers = async () => {
       `
       id,
       position_id,
+      specializations,
       current_load,
       avail_days,
+      pref_time,
       user_profile:teacher_profile_user_id_fkey (
         id,
         name,
-        email
+        email,
+        role
       ),
       positions:user_roles_position_id_fkey (
         id,
@@ -420,7 +423,7 @@ const getTeachers = async () => {
       )
     `
     )
-    .not("position_id", "is", null); // exclude teachers without position_id
+    .not("position_id", "is", null);
 
   if (error) {
     console.error("Error fetching teachers:", error.message);
@@ -431,14 +434,7 @@ const getTeachers = async () => {
 };
 
 const getRooms = async () => {
-  const { data, error } = await supabase.from("room").select(`
-        id,
-        room_id,
-        room_title,
-        room_desc,
-        status,
-        floor
-      `);
+  const { data, error } = await supabase.from("room").select(`*`);
 
   if (error) {
     console.error("Error fetching rooms:", error.message);
@@ -449,15 +445,7 @@ const getRooms = async () => {
 };
 
 const getSubjects = async () => {
-  const { data, error } = await supabase.from("subjects").select(`
-        id,
-        subject,
-        subject_code,
-        units,      
-        semester,
-        school_year,
-        total_hours    
-      `);
+  const { data, error } = await supabase.from("subjects").select(`*`);
 
   if (error) {
     console.error("Error fetching subjects:", error.message);
@@ -469,8 +457,7 @@ const getSubjects = async () => {
 
 const getSections = async () => {
   const { data, error } = await supabase.from("sections").select(`
-      id,
-      name,
+      *,
       student_sections:student_sections(count)
     `);
 
@@ -540,8 +527,9 @@ const runAutoSchedule = async (req, res) => {
     const roomBookings = {};
     const instructorBookings = {};
     const unassigned = [];
+    const subjectTeacherMap = {};
     const sectionSubjectDays = {};
-
+    
     // Initialize room bookings with existing schedules
     existingSchedules.forEach((sched) => {
       if (!roomBookings[sched.room_id]) roomBookings[sched.room_id] = {};
@@ -572,10 +560,20 @@ const runAutoSchedule = async (req, res) => {
       });
     });
 
-    const instructors = filteredTeachers.map((teacher) => {
-      const fullName = teacher.user_profile?.name || "Unnamed";
+    const instructors = filteredTeachers  
+    .map((teacher) => {
+      const fullName = teacher.user_profile?.name || "No name";
       const maxLoad = teacher.positions?.min_load;
       const availDays = parseAvailableDays(teacher.avail_days);
+
+      let timePref = { start: "08:00", end: "18:00" }; // default
+      if (teacher.pref_time) {
+        const [start, end] = teacher.pref_time.split("-").map((t) => t.trim());
+        timePref = { start, end };
+      }
+      const specializations = teacher.specializations
+      ? teacher.specializations.split(",").map((s) => s.replace(/"/g, "").trim())
+      : [];
 
       return {
         id: teacher.id,
@@ -585,7 +583,8 @@ const runAutoSchedule = async (req, res) => {
         dayPref: availDays.length
           ? availDays
           : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-        timePref: { start: "08:00", end: "18:00" },
+        timePref,
+        specializations 
       };
     });
 
@@ -620,133 +619,365 @@ const runAutoSchedule = async (req, res) => {
       instructorBookings[instructorId][day].push({ start, end });
     };
 
-    const splitUnitsToBlocks = (units) => {
-      let remaining = units;
+    const getLecLabHours = (lecHours, labHours) => {
       const blocks = [];
 
-      if (units <= 2) {
-        // If the subject is 1 or 2 units, give it all in one block
-        blocks.push(units);
-        return blocks;
+      if (lecHours > 0) {
+        if (lecHours <= 3) {
+          // If lecture is 3 or less, make one block
+          blocks.push({ type: "Lec", hours: lecHours });
+        } else {
+          let remaining = lecHours;
+          while (remaining > 0) {
+            const minBlock = Math.min(3, remaining);
+            const maxBlock = remaining;
+            const block = Math.max(minBlock, getRandomInt(minBlock, maxBlock));
+            blocks.push({ type: "Lec", hours: block });
+            remaining -= block;
+          }
+        }
       }
 
-      while (remaining > 0) {
-        // Force at least 2 hours per meeting unless the remaining is less than 2
-        const minBlock = Math.min(2, remaining);
-        const maxBlock = remaining; // can use all remaining if needed
-        const block = Math.max(minBlock, getRandomInt(minBlock, maxBlock));
-        blocks.push(block);
-        remaining -= block;
+      if (labHours > 0) {
+        if (labHours <= 3) {
+          blocks.push({ type: "Lab", hours: labHours });
+        } else {
+          let remaining = labHours;
+          while (remaining > 0) {
+            const minBlock = Math.min(3, remaining);
+            const maxBlock = remaining;
+            const block = Math.max(minBlock, getRandomInt(minBlock, maxBlock));
+            blocks.push({ type: "Lab", hours: block });
+            remaining -= block;
+          }
+        }
       }
 
       return blocks;
     };
 
-    for (const instructor of instructors) {
-      schedule[instructor.name] = [];
-      loadMap[instructor.name] = instructor.currentLoad;
-      dailySubjectCount[instructor.id] = {};
+    const mapSubjectsToSections = (sections, subjects) => {
+      const map = {};
 
-      // Initialize instructor bookings if not already done
-      if (!instructorBookings[instructor.id]) {
-        instructorBookings[instructor.id] = {};
+      // Group sections by year-sem
+      for (const section of sections) {
+        const key = `${section.year.trim()}-${section.semester.trim()}`;
+        if (!map[key]) {
+          map[key] = { sections: [], subjects: [] };
+        }
+        map[key].sections.push(section);
       }
 
-      for (const day of instructor.dayPref) {
-        dailySubjectCount[instructor.id][day] = 0;
-        if (!instructorBookings[instructor.id][day]) {
-          instructorBookings[instructor.id][day] = [];
+      // Group subjects by school_year-sem
+      for (const subject of subjects) {
+        const key = `${subject.school_year.trim()}-${subject.semester.trim()}`;
+        if (!map[key]) {
+          map[key] = { sections: [], subjects: [] };
         }
+        map[key].subjects.push(subject);
       }
 
-      // Only assign unassigned subjects to avoid conflicts
-      for (const subject of unassignedSubjects) {
-        if (loadMap[instructor.name] + subject.units > instructor.maxLoad) {
-          continue;
-        }
-        const section = getRandomSection(sections);
-        if (!sectionSubjectDays[section.id])
+      return map;
+    }
+    const subjectSectionMap = mapSubjectsToSections(sections, subjects);
+    
+    for (const [key, group] of Object.entries(subjectSectionMap)) {
+      const { sections, subjects } = group;
+
+      for (const section of sections) {
+        if (!sectionSubjectDays[section.id]) {
           sectionSubjectDays[section.id] = {};
-        if (!sectionSubjectDays[section.id][subject.subject_code]) {
-          sectionSubjectDays[section.id][subject.subject_code] = new Set();
         }
 
-        const timeBlocks = splitUnitsToBlocks(subject.units);
-        let allBlocksAssigned = true;
-
-        for (const blockHours of timeBlocks) {
-          let blockAssigned = false;
-
-          if (loadMap[instructor.name] + blockHours > instructor.maxLoad) {
-            allBlocksAssigned = false;
-            break;
+        for (const subject of subjects) {
+          if (!sectionSubjectDays[section.id][subject.subject_code]) {
+            sectionSubjectDays[section.id][subject.subject_code] = new Set();
           }
 
-          for (const day of instructor.dayPref) {
-            // prevent same section+subject on same day (global)
-            if (sectionSubjectDays[section.id][subject.subject_code].has(day)) {
-              continue; // try another day
+          // --- Check if already assigned instructor ---
+          let assignedInstructorId =
+            subjectTeacherMap[section.id]?.[subject.subject_code];
+
+          if (!assignedInstructorId) {
+            // find suitable instructor
+            let chosenInstructor = null;
+
+            for (const instructor of instructors) {
+              // Init schedule/map for instructor if not yet
+              if (!schedule[instructor.name]) schedule[instructor.name] = [];
+              if (!loadMap[instructor.name])
+                loadMap[instructor.name] = instructor.currentLoad;
+              if (!dailySubjectCount[instructor.id])
+                dailySubjectCount[instructor.id] = {};
+              if (!instructorBookings[instructor.id])
+                instructorBookings[instructor.id] = {};
+
+              // set default days
+              for (const day of instructor.dayPref) {
+                if (dailySubjectCount[instructor.id][day] == null)
+                  dailySubjectCount[instructor.id][day] = 0;
+                if (!instructorBookings[instructor.id][day])
+                  instructorBookings[instructor.id][day] = [];
+              }
+
+              // 1. Check load
+              if (loadMap[instructor.name] + subject.units > instructor.maxLoad) {
+                continue;
+              }
+
+              // 2. Check specialization
+              if (!instructor.specializations.includes(subject.specialization)) {
+                continue;
+              }
+
+              // ✅ Found a suitable instructor
+              chosenInstructor = instructor;
+              break;
             }
 
-            if (dailySubjectCount[instructor.id][day] >= 3) continue; // max 3 subjects/day
-
-            const prefStartMin = toMinutes(instructor.timePref.start);
-            const prefEndMin = toMinutes(instructor.timePref.end);
-            const durationMin = blockHours * 60;
-
-            const earliestStart = prefStartMin;
-            const latestStart = prefEndMin - durationMin;
-            if (latestStart < earliestStart) continue;
-
-            const randomStartMin = getRandomInt(earliestStart, latestStart);
-            const randomEndMin = randomStartMin + durationMin;
-            const startTime = toHHMM(randomStartMin);
-            const endTime = toHHMM(randomEndMin);
-
-            const availableRoom = rooms.find(
-              (room) =>
-                isRoomFree(room.id, day, startTime, endTime) &&
-                isInstructorFree(instructor.id, day, startTime, endTime)
-            );
-
-            if (availableRoom) {
-              schedule[instructor.name].push({
-                subject: subject.subject,
-                subject_code: subject.subject_code,
-                section_id: section.id,
-                section: section.name,
-                day,
-                start: startTime,
-                end: endTime,
-                room_title: availableRoom.room_title,
-                room_id: availableRoom.room_id,
-                units: blockHours,
+            if (!chosenInstructor) {
+              unassigned.push({
+                subject,
+                section,
+                reason: "No available instructor for subject",
               });
+              continue;
+            }
 
-              loadMap[instructor.name] += blockHours;
-              dailySubjectCount[instructor.id][day]++;
-              bookRoom(availableRoom.id, day, startTime, endTime);
-              bookInstructor(instructor.id, day, startTime, endTime);
-              sectionSubjectDays[section.id][subject.subject_code].add(day);
-              blockAssigned = true;
+            // lock assignment
+            if (!subjectTeacherMap[section.id]) subjectTeacherMap[section.id] = {};
+            subjectTeacherMap[section.id][subject.subject_code] =
+              chosenInstructor.id;
+            assignedInstructorId = chosenInstructor.id;
+          }
+
+          // Now we have an assigned instructor
+          const instructor = instructors.find(
+            (i) => i.id === assignedInstructorId
+          );
+
+          const timeBlocks = getLecLabHours(
+            subject.lec_hours,
+            subject.lab_hours
+          );
+
+          let allBlocksAssigned = true;
+          let failReason = null;
+
+          for (const blockHours of timeBlocks) {
+            let blockAssigned = false;
+
+            if (loadMap[instructor.name] + blockHours.hours > instructor.maxLoad) {
+              failReason = `Instructor ${instructor.name} exceeds max load with ${blockHours.hours}h`;
+              allBlocksAssigned = false;
+              break;
+            }
+
+            for (const day of instructor.dayPref) {
+              if (sectionSubjectDays[section.id][subject.subject_code].has(day)) {
+                failReason = `Section ${section.name} already has ${subject.subject_code} on ${day}`;
+                continue;
+              }
+
+              const prefStartMin = toMinutes(instructor.timePref.start);
+              const prefEndMin = toMinutes(instructor.timePref.end);
+              const durationMin = blockHours.hours * 60;
+
+              const earliestStart = prefStartMin;
+              const latestStart = prefEndMin - durationMin;
+              if (latestStart < earliestStart) {
+                failReason = `Time window too small for ${blockHours.hours}h on ${day}`;
+                continue;
+              }
+
+              const randomStartMin = getRandomInt(earliestStart, latestStart);
+              const randomEndMin = randomStartMin + durationMin;
+              const startTime = toHHMM(randomStartMin);
+              const endTime = toHHMM(randomEndMin);
+
+              const availableRoom = rooms.find(
+                (room) =>
+                  room.type.trim().toLowerCase() ===
+                    blockHours.type.trim().toLowerCase() &&
+                  isRoomFree(room.id, day, startTime, endTime) &&
+                  isInstructorFree(instructor.id, day, startTime, endTime)
+              );
+
+              if (availableRoom) {
+                schedule[instructor.name].push({
+                  subject: subject.subject,
+                  subject_code: subject.subject_code,
+                  section_id: section.id,
+                  section: section.name,
+                  day,
+                  start: startTime,
+                  end: endTime,
+                  room_title: availableRoom.room_title,
+                  room_id: availableRoom.room_id,
+                  units: blockHours.hours,
+                });
+
+                loadMap[instructor.name] += blockHours.hours;
+                dailySubjectCount[instructor.id][day]++;
+                bookRoom(availableRoom.id, day, startTime, endTime);
+                bookInstructor(instructor.id, day, startTime, endTime);
+                sectionSubjectDays[section.id][subject.subject_code].add(day);
+
+                blockAssigned = true;
+                failReason = null;
+                break;
+              } else {
+                failReason = `No available room for ${subject.subject_code} on ${day} (${blockHours.type})`;
+              }
+            }
+
+            if (!blockAssigned) {
+              allBlocksAssigned = false;
               break;
             }
           }
 
-          if (!blockAssigned) {
-            allBlocksAssigned = false;
-            break;
+          if (!allBlocksAssigned) {
+            unassigned.push({
+              subject,
+              section,
+              reason: failReason,
+            });
           }
-        }
-
-        if (!allBlocksAssigned) {
-          unassigned.push({
-            subject,
-            reason: `Could not fit all hours for ${instructor.name}`,
-          });
         }
       }
     }
+    // for (const instructor of instructors) {
+    //   schedule[instructor.name] = [];
+    //   loadMap[instructor.name] = instructor.currentLoad;
+    //   dailySubjectCount[instructor.id] = {};
+
+    //   // Initialize instructor bookings if not already done
+    //   if (!instructorBookings[instructor.id]) {
+    //     instructorBookings[instructor.id] = {};
+    //   }
+
+    //   for (const day of instructor.dayPref) {
+    //     dailySubjectCount[instructor.id][day] = 0;
+    //     if (!instructorBookings[instructor.id][day]) {
+    //       instructorBookings[instructor.id][day] = [];
+    //     }
+    //   }
+
+    //   // Only assign unassigned subjects to avoid conflicts
+    //   for (const subject of unassignedSubjects) {
+    //     let failReason = null;
+
+    //     // skip if instructor have max load already
+    //     if (loadMap[instructor.name] + subject.units > instructor.maxLoad) {
+    //       failReason = `Instructor ${instructor.name} exceeds max load for subject ${subject.subject_code}`;
+    //       continue;
+    //     }
+        
+    //     // skip if not instructor not specialize with the sub
+    //     if (!instructor.specializations.includes(subject.specialization)) { 
+    //       failReason = `Instructor ${instructor.name} not specialized in ${subject.specialization}`;
+    //       continue;
+    //     }
+
+    //     const subjectSem = subject.semester
+    //     const subjectSy = subject.school_year
+
+    //     const section = getRandomSection(sections, subjectSem, subjectSy);
+
+    //     if (!sectionSubjectDays[section.id])
+    //       sectionSubjectDays[section.id] = {};
+    //     if (!sectionSubjectDays[section.id][subject.subject_code]) {
+    //       sectionSubjectDays[section.id][subject.subject_code] = new Set();
+    //     }
+
+    //     const timeBlocks = getLecLabHours(subject.lec_hours, subject.lab_hours);
+        
+    //     let allBlocksAssigned = true;
+
+    //     for (const blockHours of timeBlocks) {
+    //       let blockAssigned = false;
+
+    //       if (loadMap[instructor.name] + blockHours.hours > instructor.maxLoad) {
+    //         failReason = `Instructor ${instructor.name} exceeds max load when assigning block of ${blockHours.hours}h`;
+    //         allBlocksAssigned = false;
+    //         break;
+    //       }
+          
+    //       for (const day of instructor.dayPref) {
+    //         // prevent same section+subject on same day (global)
+    //         if (sectionSubjectDays[section.id][subject.subject_code].has(day)) {
+    //           failReason = `Section ${section.name} already has ${subject.subject_code} on ${day}`;
+    //           continue; // try another day
+    //         }
+
+    //         // if (dailySubjectCount[instructor.id][day] >= ) continue; // max 5 subjects/day
+
+    //         const prefStartMin = toMinutes(instructor.timePref.start);
+    //         const prefEndMin = toMinutes(instructor.timePref.end);
+    //         const durationMin = blockHours.hours * 60;
+
+    //         const earliestStart = prefStartMin;
+    //         const latestStart = prefEndMin - durationMin;
+    //         if (latestStart < earliestStart) {
+    //           failReason = `Time window too small for ${blockHours.hours}h on ${day}`;
+    //           continue
+    //         };
+
+    //         const randomStartMin = getRandomInt(earliestStart, latestStart);
+    //         const randomEndMin = randomStartMin + durationMin;
+    //         const startTime = toHHMM(randomStartMin);
+    //         const endTime = toHHMM(randomEndMin);
+
+    //         const availableRoom = rooms.find(
+    //           (room) =>
+    //             room.type.trim().toLowerCase() === blockHours.type.trim().toLowerCase() &&
+    //             isRoomFree(room.id, day, startTime, endTime) &&
+    //             isInstructorFree(instructor.id, day, startTime, endTime)
+    //         );
+
+    //         if (availableRoom) {
+    //           schedule[instructor.name].push({
+    //             subject: subject.subject,
+    //             subject_code: subject.subject_code,
+    //             section_id: section.id,
+    //             section: section.name,
+    //             day,
+    //             start: startTime,
+    //             end: endTime,
+    //             room_title: availableRoom.room_title,
+    //             room_id: availableRoom.room_id,
+    //             units: blockHours.hours,
+    //           });
+
+    //           loadMap[instructor.name] += blockHours.hours;
+    //           dailySubjectCount[instructor.id][day]++;
+    //           bookRoom(availableRoom.id, day, startTime, endTime);
+    //           bookInstructor(instructor.id, day, startTime, endTime);
+    //           sectionSubjectDays[section.id][subject.subject_code].add(day);
+    //           blockAssigned = true;
+    //           failReason = null;
+    //           break;
+    //         } else {
+    //           failReason = `No available room for ${subject.subject_code} on ${day} (${blockHours.type})`;
+    //         }
+       
+    //       }
+
+    //       if (!blockAssigned) {
+    //         allBlocksAssigned = false;
+    //         break;
+    //       }
+    //     }
+
+    //     if (!allBlocksAssigned) {
+    //       unassigned.push({
+    //         subject,
+    //         reason: failReason,
+    //       });
+    //     }
+    //   }
+    // }
 
     // Group schedules for database insertion
     const groupedSchedules = {};
@@ -810,7 +1041,7 @@ const runAutoSchedule = async (req, res) => {
 
     const insertResults = await Promise.all(insertPromises);
     const insertErrors = insertResults.filter((r) => r.error);
-
+    
     // Only update loads for selected faculty
     const updatePromises = Object.entries(loadMap).map(
       async ([teacherName, load]) => {

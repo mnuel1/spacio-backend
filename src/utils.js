@@ -112,8 +112,16 @@ export const generateTimeDaySlots = ({
   return slots;
 };
 
-export const getRandomSection = (sections) =>
-  sections[Math.floor(Math.random() * sections.length)];
+export const getRandomSection = (sections, sem, sy) => {
+  const filtered = sections.filter(
+    (sec) => sec.semester.trim() === sem.trim() && sec.year.trim() === sy.trim()
+  );
+  
+  if (filtered.length === 0) return null;
+
+  return filtered[Math.floor(Math.random() * filtered.length)];
+};
+
 
 export const isRoomAvailable = (room, day, start, end) => {
   const bookings = roomBookings[day] || [];

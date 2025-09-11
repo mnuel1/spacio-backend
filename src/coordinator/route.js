@@ -79,4 +79,5 @@ router.put("/users/deactivate/:id", deactivateUser);
 router.delete("/users/:id", deleteUser);
 
 router.get("/dashboard", getDashboard);
+
 module.exports = router;

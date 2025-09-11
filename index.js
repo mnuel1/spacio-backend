@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 const studentRouter = require('./src/student/route');
 const facultyRouter = require('./src/faculty/route');
 const coordinatorRouter = require('./src/coordinator/route');
+const deanRouter = require('./src/dean/route');
 const mmDataRouter = require('./src/mmdata/route');
 const accountRouter = require('./src/account/route');
 dotenv.config();
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use('/student', studentRouter);
 app.use('/faculty', facultyRouter);
 app.use('/coordinator', coordinatorRouter);
+app.use('/dean', deanRouter);
 app.use('/mdata', mmDataRouter);
 app.use('/account', accountRouter);
 
