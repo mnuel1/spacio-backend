@@ -29,6 +29,7 @@ const getFaculty = async (req, res) => {
 
       return {
         id: user.id,
+        facultyId: profile.id,
         employeeId: user.user_id,
         firstName: user.name?.split(" ")[0] || "",
         lastName: user.name?.split(" ")[1] || "",
@@ -307,6 +308,7 @@ const updateFaculty = async (req, res) => {
         profile_image,
         created_at,
         teacher_profile (
+          id,
           salary_grade,
           contract_type,
           certifications,
@@ -372,6 +374,7 @@ const updateFaculty = async (req, res) => {
 
     const formattedFaculty = {
       id: user.id,
+      facultyId: profile.id, // Add teacher_profile.id as facultyId for schedule matching
       employeeId: user.user_id,
       firstName: user.name?.split(" ")[0] || "",
       lastName: user.name?.split(" ")[1] || "",

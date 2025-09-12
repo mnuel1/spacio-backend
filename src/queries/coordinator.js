@@ -12,6 +12,7 @@ export const getFacultyQuery = `
   profile_image,
   created_at,
   teacher_profile:teacher_profile_user_id_fkey (
+    id,
     salary_grade,
     contract_type,
     certifications,
