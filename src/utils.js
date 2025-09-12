@@ -145,3 +145,7 @@ export const calculateDurationInTimeFormat = (start, end) => {
     "0"
   )}`;
 };
+
+export const roundToSlot = (minutes, slotSize = 60) => {
+  return Math.ceil(minutes / (slotSize)) * slotSize;
+}

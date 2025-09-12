@@ -29,6 +29,7 @@ const {
   getConflicts,
   updateConflict,
   checkTeachersAvailability,
+  sectionSchedule
 } = require("../coordinator/loadController");
 
 const {
@@ -70,6 +71,7 @@ router.put("/conflicts/:id", updateConflict);
 router.get("/teachers/availability/check", checkTeachersAvailability);
 
 router.post("/auto/schedule", runAutoSchedule);
+router.get("/section/schedule", sectionSchedule);
 
 const upload = multer({ dest: "uploads/" });
 

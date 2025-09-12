@@ -6,6 +6,7 @@ const {
   overlap,
   toHHMM,
   getRandomInt,
+  roundToSlot,
   generateTimeDaySlots,
   getRandomSection,
   isRoomAvailable,
@@ -790,7 +791,8 @@ const runAutoSchedule = async (req, res) => {
                 continue;
               }
 
-              const randomStartMin = getRandomInt(earliestStart, latestStart);
+              const randomStartMin = roundToSlot(earliestStart, 60);
+              // const randomStartMin = getRandomInt(earliestStart, latestStart);
               const randomEndMin = randomStartMin + durationMin;
               const startTime = toHHMM(randomStartMin);
               const endTime = toHHMM(randomEndMin);
@@ -847,138 +849,7 @@ const runAutoSchedule = async (req, res) => {
         }
       }
     }
-    // for (const instructor of instructors) {
-    //   schedule[instructor.name] = [];
-    //   loadMap[instructor.name] = instructor.currentLoad;
-    //   dailySubjectCount[instructor.id] = {};
-
-    //   // Initialize instructor bookings if not already done
-    //   if (!instructorBookings[instructor.id]) {
-    //     instructorBookings[instructor.id] = {};
-    //   }
-
-    //   for (const day of instructor.dayPref) {
-    //     dailySubjectCount[instructor.id][day] = 0;
-    //     if (!instructorBookings[instructor.id][day]) {
-    //       instructorBookings[instructor.id][day] = [];
-    //     }
-    //   }
-
-    //   // Only assign unassigned subjects to avoid conflicts
-    //   for (const subject of unassignedSubjects) {
-    //     let failReason = null;
-
-    //     // skip if instructor have max load already
-    //     if (loadMap[instructor.name] + subject.units > instructor.maxLoad) {
-    //       failReason = `Instructor ${instructor.name} exceeds max load for subject ${subject.subject_code}`;
-    //       continue;
-    //     }
-        
-    //     // skip if not instructor not specialize with the sub
-    //     if (!instructor.specializations.includes(subject.specialization)) { 
-    //       failReason = `Instructor ${instructor.name} not specialized in ${subject.specialization}`;
-    //       continue;
-    //     }
-
-    //     const subjectSem = subject.semester
-    //     const subjectSy = subject.school_year
-
-    //     const section = getRandomSection(sections, subjectSem, subjectSy);
-
-    //     if (!sectionSubjectDays[section.id])
-    //       sectionSubjectDays[section.id] = {};
-    //     if (!sectionSubjectDays[section.id][subject.subject_code]) {
-    //       sectionSubjectDays[section.id][subject.subject_code] = new Set();
-    //     }
-
-    //     const timeBlocks = getLecLabHours(subject.lec_hours, subject.lab_hours);
-        
-    //     let allBlocksAssigned = true;
-
-    //     for (const blockHours of timeBlocks) {
-    //       let blockAssigned = false;
-
-    //       if (loadMap[instructor.name] + blockHours.hours > instructor.maxLoad) {
-    //         failReason = `Instructor ${instructor.name} exceeds max load when assigning block of ${blockHours.hours}h`;
-    //         allBlocksAssigned = false;
-    //         break;
-    //       }
-          
-    //       for (const day of instructor.dayPref) {
-    //         // prevent same section+subject on same day (global)
-    //         if (sectionSubjectDays[section.id][subject.subject_code].has(day)) {
-    //           failReason = `Section ${section.name} already has ${subject.subject_code} on ${day}`;
-    //           continue; // try another day
-    //         }
-
-    //         // if (dailySubjectCount[instructor.id][day] >= ) continue; // max 5 subjects/day
-
-    //         const prefStartMin = toMinutes(instructor.timePref.start);
-    //         const prefEndMin = toMinutes(instructor.timePref.end);
-    //         const durationMin = blockHours.hours * 60;
-
-    //         const earliestStart = prefStartMin;
-    //         const latestStart = prefEndMin - durationMin;
-    //         if (latestStart < earliestStart) {
-    //           failReason = `Time window too small for ${blockHours.hours}h on ${day}`;
-    //           continue
-    //         };
-
-    //         const randomStartMin = getRandomInt(earliestStart, latestStart);
-    //         const randomEndMin = randomStartMin + durationMin;
-    //         const startTime = toHHMM(randomStartMin);
-    //         const endTime = toHHMM(randomEndMin);
-
-    //         const availableRoom = rooms.find(
-    //           (room) =>
-    //             room.type.trim().toLowerCase() === blockHours.type.trim().toLowerCase() &&
-    //             isRoomFree(room.id, day, startTime, endTime) &&
-    //             isInstructorFree(instructor.id, day, startTime, endTime)
-    //         );
-
-    //         if (availableRoom) {
-    //           schedule[instructor.name].push({
-    //             subject: subject.subject,
-    //             subject_code: subject.subject_code,
-    //             section_id: section.id,
-    //             section: section.name,
-    //             day,
-    //             start: startTime,
-    //             end: endTime,
-    //             room_title: availableRoom.room_title,
-    //             room_id: availableRoom.room_id,
-    //             units: blockHours.hours,
-    //           });
-
-    //           loadMap[instructor.name] += blockHours.hours;
-    //           dailySubjectCount[instructor.id][day]++;
-    //           bookRoom(availableRoom.id, day, startTime, endTime);
-    //           bookInstructor(instructor.id, day, startTime, endTime);
-    //           sectionSubjectDays[section.id][subject.subject_code].add(day);
-    //           blockAssigned = true;
-    //           failReason = null;
-    //           break;
-    //         } else {
-    //           failReason = `No available room for ${subject.subject_code} on ${day} (${blockHours.type})`;
-    //         }
-       
-    //       }
-
-    //       if (!blockAssigned) {
-    //         allBlocksAssigned = false;
-    //         break;
-    //       }
-    //     }
-
-    //     if (!allBlocksAssigned) {
-    //       unassigned.push({
-    //         subject,
-    //         reason: failReason,
-    //       });
-    //     }
-    //   }
-    // }
-
+   
     // Group schedules for database insertion
     const groupedSchedules = {};
 
@@ -1334,6 +1205,85 @@ const checkTeachersAvailability = async (req, res) => {
   }
 };
 
+const sectionSchedule = async (req, res) => {
+  try {
+    const { data: rows, error } = await supabase
+      .from("teacher_schedules")
+      .select(`
+        id,
+        teacher_id,
+        subject_id,
+        section_id,
+        room_id,
+        start_time,
+        end_time,
+        days,
+        semester,
+        school_year,
+        total_count,
+        total_duration,
+        teacher_profile ( id, 
+          user_profile:teacher_profile_user_id_fkey (
+            id, user_id, name, email, profile_image, status
+          ) 
+        ),
+        subjects:teacher_schedules_subject_id_fkey ( id, subject_code, subject ),
+        sections:teacher_schedules_section_id_fkey ( id, name ),
+        rooms:teacher_schedules_room_id_fkey ( room_id, room_title )
+      `);
+
+    if (error) throw error;
+
+    // Group schedules by section
+    const scheduleBySection = {};
+
+    rows.forEach((row) => {
+      const sectionName = row.sections?.name || "Unknown Section";
+      if (!scheduleBySection[sectionName]) {
+        scheduleBySection[sectionName] = [];
+      }
+
+      // Map abbreviated days back to full names
+      const dayMap = { M: "Monday", T: "Tuesday", W: "Wednesday", Th: "Thursday", F: "Friday" };
+      const daysExpanded = row.days.match(/Th|[MTWF]/g)?.map((d) => dayMap[d]) || [];
+
+      daysExpanded.forEach((day) => {
+        scheduleBySection[sectionName].push({
+          subject: row.subjects?.subject,
+          subject_code: row.subjects?.subject_code,
+          specialization: row.subjects?.specialization,
+          teacher: row.teacher_profile?.user_profile?.name,
+          teacher_id: row.teacher_profile?.id,
+          section_id: row.sections?.id,
+          section: row.sections?.name,
+          year: row.sections?.year,
+          semester: row.sections?.semester,
+          day,
+          start: row.start_time,
+          end: row.end_time,
+          room_title: row.rooms?.room_title,
+          room_id: row.rooms?.room_id,
+          room_type: row.rooms?.type,
+          units: row.total_duration,
+        });
+      });
+    });
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Schedules fetched by section",
+      data: scheduleBySection,
+    });
+  } catch (error) {
+    console.error("Error fetching section schedules:", error);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      error: error.message,
+    });
+  }
+};
+
 // Helper function to abbreviate days
 const abbreviateDays = (days) => {
   const dayMap = {
@@ -1361,4 +1311,5 @@ module.exports = {
   getConflicts,
   updateConflict,
   checkTeachersAvailability,
+  sectionSchedule
 };
