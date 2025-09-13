@@ -45,6 +45,14 @@ const scheduleOverview = async (id) => {
         "YYYY-MM-DD HH:mm:ss"
       );
       const end = dayjs(`${todayDate} ${item.end_time}`, "YYYY-MM-DD HH:mm:ss");
+    // Only process today's classes if it's actually a scheduled day
+    if (isToday) {
+      const todayDate = now.format("YYYY-MM-DD");
+      const start = dayjs(
+        `${todayDate} ${item.start_time}`,
+        "YYYY-MM-DD HH:mm:ss"
+      );
+      const end = dayjs(`${todayDate} ${item.end_time}`, "YYYY-MM-DD HH:mm:ss");
 
       totalClassesToday++;
 

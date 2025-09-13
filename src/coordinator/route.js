@@ -29,7 +29,7 @@ const {
   getConflicts,
   updateConflict,
   checkTeachersAvailability,
-  sectionSchedule
+  sectionSchedule,
 } = require("../coordinator/loadController");
 
 const {
@@ -49,6 +49,16 @@ const {
 } = require("../coordinator/academicPeriodController");
 
 const { getDashboard } = require("../coordinator/dashboardController");
+
+const {
+  getCurrentPeriod,
+  getAcademicPeriods,
+  createAcademicPeriod,
+  setCurrentPeriod,
+  getOfficialsBoard,
+  appointOfficial,
+  debugCurrentPeriod,
+} = require("../coordinator/academicPeriodController");
 
 const router = express.Router();
 const multer = require("multer");
