@@ -37,18 +37,18 @@ const scheduleOverview = async (id) => {
     const fullDays = parseAvailableDays(item.days);
     const isToday = fullDays.includes(currentDay);
 
-    const todayDate = now.format("YYYY-MM-DD");
-    const start = dayjs(
-      `${todayDate} ${item.start_time}`,
-      "YYYY-MM-DD HH:mm:ss"
-    );
-    const end = dayjs(`${todayDate} ${item.end_time}`, "YYYY-MM-DD HH:mm:ss");
-
-    let status = "upcoming";
-
+    // Only process today's classes if it's actually a scheduled day
     if (isToday) {
+      const todayDate = now.format("YYYY-MM-DD");
+      const start = dayjs(
+        `${todayDate} ${item.start_time}`,
+        "YYYY-MM-DD HH:mm:ss"
+      );
+      const end = dayjs(`${todayDate} ${item.end_time}`, "YYYY-MM-DD HH:mm:ss");
+
       totalClassesToday++;
 
+      let status = "upcoming";
       if (now.isBefore(start)) {
         status = "upcoming";
         upcomingToday.push(start);
@@ -58,6 +58,7 @@ const scheduleOverview = async (id) => {
       } else {
         status = "current";
       }
+
       classes.push({
         id: item.id,
         subject: item.subjects?.subject || "Unknown",
@@ -70,38 +71,54 @@ const scheduleOverview = async (id) => {
       });
     }
 
+    // Find next occurrence of this class (including today if not yet passed)
     let scheduledDateTime = null;
 
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 14; i++) {
+      // Look ahead 2 weeks
       const checkDate = now.add(i, "day");
-      if (fullDays.includes(checkDate.format("dddd"))) {
-        scheduledDateTime = dayjs(
+      const dayName = checkDate.format("dddd");
+
+      if (fullDays.includes(dayName)) {
+        const classDateTime = dayjs(
           `${checkDate.format("YYYY-MM-DD")} ${item.start_time}`,
           "YYYY-MM-DD HH:mm:ss"
         );
-        break;
+
+        // Only include if it's in the future
+        if (classDateTime.isAfter(now)) {
+          scheduledDateTime = classDateTime;
+          break;
+        }
       }
     }
 
-    // 🛡️ Ensure scheduledDateTime is a valid Dayjs object
+    // Add to all classes list for upcoming classes display
     if (scheduledDateTime && scheduledDateTime.isValid()) {
       const timeUntil = scheduledDateTime.fromNow();
       const readableDate = scheduledDateTime.format("dddd, MMMM D, YYYY");
+      const isToday = scheduledDateTime.isSame(now, "day");
+      const isTomorrow = scheduledDateTime.isSame(now.add(1, "day"), "day");
+
+      let classStatus = "upcoming";
+      if (isToday) {
+        classStatus = "today";
+      } else if (isTomorrow) {
+        classStatus = "tomorrow";
+      }
 
       allClasses.push({
         id: item.id,
         subject: item.subjects?.subject || "Unknown",
         code: item.subjects?.subject_code || "N/A",
         section: item.sections?.name || "Unknown",
-        time: `${start.format("HH:mm")} - ${end.format("HH:mm")}`,
+        time: `${item.start_time.slice(0, 5)} - ${item.end_time.slice(0, 5)}`,
         room: item.room?.room_title || "TBA",
         students: item.total_count,
         date: readableDate,
         timeUntil: timeUntil,
-        status: timeUntil,
+        status: classStatus,
       });
-    } else {
-      console.warn(`Invalid scheduledDateTime for item ID ${item.id}`);
     }
   });
 
@@ -111,13 +128,26 @@ const scheduleOverview = async (id) => {
         .format("hh:mm A")
     : null;
 
+  // Sort all classes by scheduled time
+  allClasses.sort((a, b) => {
+    const timeA = dayjs(
+      a.date + " " + a.time.split(" - ")[0],
+      "dddd, MMMM D, YYYY HH:mm"
+    );
+    const timeB = dayjs(
+      b.date + " " + b.time.split(" - ")[0],
+      "dddd, MMMM D, YYYY HH:mm"
+    );
+    return timeA.valueOf() - timeB.valueOf();
+  });
+
   return {
     currentTime: now.format("hh:mm A"),
     date: now.format("dddd, MMMM D, YYYY"),
     todaysClasses: {
       metric: totalClassesToday,
       completedClass: completedToday,
-      nextClass: nextClassTime,
+      nextClass: totalClassesToday > 0 ? nextClassTime : "No classes today",
     },
     classes,
     allClasses,
