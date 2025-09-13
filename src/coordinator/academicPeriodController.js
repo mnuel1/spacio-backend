@@ -202,7 +202,7 @@ const getOfficialsBoard = async (req, res) => {
 // Appoint official to position
 const appointOfficial = async (req, res) => {
   try {
-    const { position_id, user_id, notes } = req.body;
+    const { position_id, user_id, official_name, notes } = req.body;
     const currentPeriod = await getCurrentAcademicPeriod(supabase);
 
     if (!currentPeriod.id) {
@@ -213,23 +213,35 @@ const appointOfficial = async (req, res) => {
       });
     }
 
+    // Support both user_id (for existing users) and official_name (for text input)
+    if (!user_id && !official_name) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Either user_id or official_name is required",
+        data: null,
+      });
+    }
+
+    const appointmentData = {
+      academic_period_id: currentPeriod.id,
+      position_id,
+      appointed_by: req.user?.id || null,
+      status: "Active",
+      notes: notes || null,
+    };
+
+    // If user_id is provided, use it; otherwise use official_name
+    if (user_id) {
+      appointmentData.user_id = user_id;
+    } else {
+      appointmentData.official_name = official_name;
+    }
+
     const { data, error } = await supabase
       .from("officials_board")
-      .upsert(
-        [
-          {
-            academic_period_id: currentPeriod.id,
-            position_id,
-            user_id,
-            notes,
-            appointed_by: req.user?.id || null,
-            status: "Active",
-          },
-        ],
-        {
-          onConflict: "academic_period_id,position_id",
-        }
-      )
+      .upsert([appointmentData], {
+        onConflict: "academic_period_id,position_id",
+      })
       .select(
         `
         *,
