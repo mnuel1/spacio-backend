@@ -59,8 +59,16 @@ export const generateTimeSlots = () => {
 };
 
 export const getRandomInt = (min, max) => {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-};
+  // snap min and max to the nearest multiples of 60
+  const start = Math.ceil(min / 60);
+  const end = Math.floor(max / 60);
+
+  // pick a random hour in that range
+  const randomHour = Math.floor(Math.random() * (end - start + 1)) + start;
+
+  // convert back to minutes
+  return randomHour * 60;
+}
 
 export const toHHMM = (minutes) => {
   const h = Math.floor(minutes / 60)
@@ -146,6 +154,70 @@ export const calculateDurationInTimeFormat = (start, end) => {
   )}`;
 };
 
-export const roundToSlot = (minutes, slotSize = 60) => {
-  return Math.ceil(minutes / (slotSize)) * slotSize;
+export const roundToSlot = (min, max, slotSize) => {
+  const slots = Math.floor((max - min) / slotSize); // how many slots fit
+  const randomSlot = Math.floor(Math.random() * (slots + 1)); // pick slot
+  return min + randomSlot * slotSize;
 }
+
+export const getCurrentAcademicPeriod = async (supabase) => {
+  try {
+    const { data, error } = await supabase
+      .from("academic_periods")
+      .select("*")
+      .eq("is_current", true)
+      .single();
+
+    if (error || !data) {
+      // Fallback to default values if no current period is set
+      return {
+        id: null,
+        semester: "1st",
+        school_year: "2024-2025",
+        is_current: true,
+        status: "Active",
+      };
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Error fetching current academic period:", error);
+    return {
+      id: null,
+      semester: "1st",
+      school_year: "2024-2025",
+      is_current: true,
+      status: "Active",
+    };
+  }
+};
+
+export const getAcademicPeriodFilter = async (supabase) => {
+  const currentPeriod = await getCurrentAcademicPeriod(supabase);
+
+  // Return filter object that can be used in queries
+  if (currentPeriod.id) {
+    return { academic_period_id: currentPeriod.id };
+  } else {
+    return {
+      semester: currentPeriod.semester,
+      school_year: currentPeriod.school_year,
+    };
+  }
+};
+
+export const ensureAcademicPeriodId = async (supabase, data) => {
+  const currentPeriod = await getCurrentAcademicPeriod(supabase);
+
+  // If we have a current period ID, add it to the data
+  if (currentPeriod.id) {
+    return { ...data, academic_period_id: currentPeriod.id };
+  }
+
+  // Otherwise, ensure semester and school_year are set
+  return {
+    ...data,
+    semester: data.semester || currentPeriod.semester,
+    school_year: data.school_year || currentPeriod.school_year,
+  };
+};

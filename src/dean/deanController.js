@@ -1,8 +1,8 @@
 const supabase = require("../../supabase");
 
-const recordLog = async (req, res) => {
+const recordLog = async (body) => {
   try {
-    const { activity, by } = req.body;
+    const { activity, by } = body;
 
     if (!activity || !by) {
       return res.status(400).json({

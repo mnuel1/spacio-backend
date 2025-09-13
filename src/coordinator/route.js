@@ -10,7 +10,7 @@ const {
   updateFaculty,
   deleteFaculty,
   getFaculty,
-  checkFacultyDataIntegrity,
+  checkFacultyDataIntegrity,  
 } = require("../coordinator/facultyController");
 
 const {
@@ -38,6 +38,15 @@ const {
   deleteUser,
   addUsersByFile,
 } = require("../coordinator/userController");
+
+const {
+  getCurrentPeriod,
+  getAcademicPeriods,
+  createAcademicPeriod,
+  setCurrentPeriod,
+  getOfficialsBoard,
+  appointOfficial,
+} = require("../coordinator/academicPeriodController");
 
 const { getDashboard } = require("../coordinator/dashboardController");
 
@@ -81,5 +90,16 @@ router.put("/users/deactivate/:id", deactivateUser);
 router.delete("/users/:id", deleteUser);
 
 router.get("/dashboard", getDashboard);
+
+// Academic Period Management Routes
+router.get("/academic-periods/current", getCurrentPeriod);
+router.get("/academic-periods", getAcademicPeriods);
+router.post("/academic-periods", createAcademicPeriod);
+router.put("/academic-periods/:id/set-current", setCurrentPeriod);
+
+// Officials Board Routes
+router.get("/officials-board", getOfficialsBoard);
+router.post("/officials-board/appoint", appointOfficial);
+
 
 module.exports = router;

@@ -11,6 +11,9 @@ const {
   getRandomSection,
   isRoomAvailable,
   calculateDurationInTimeFormat,
+  getCurrentAcademicPeriod,
+  getAcademicPeriodFilter,
+  ensureAcademicPeriodId,
 } = require("../utils.js");
 
 const getLoad = async (req, res) => {
@@ -791,10 +794,10 @@ const runAutoSchedule = async (req, res) => {
                 continue;
               }
 
-              const randomStartMin = roundToSlot(earliestStart, 60);
-              // const randomStartMin = getRandomInt(earliestStart, latestStart);
+              // const randomStartMin = roundToSlot(earliestStart, 60);
+              const randomStartMin = getRandomInt(earliestStart, latestStart);
               const randomEndMin = randomStartMin + durationMin;
-              const startTime = toHHMM(randomStartMin);
+              const startTime = toHHMM(randomStartMin);                            
               const endTime = toHHMM(randomEndMin);
 
               const availableRoom = rooms.find(
@@ -816,7 +819,7 @@ const runAutoSchedule = async (req, res) => {
                   end: endTime,
                   room_title: availableRoom.room_title,
                   room_id: availableRoom.room_id,
-                  units: blockHours.hours,
+                  units: blockHours.hours,                  
                 });
 
                 loadMap[instructor.name] += blockHours.hours;
@@ -866,7 +869,9 @@ const runAutoSchedule = async (req, res) => {
         const section = sections.find((s) => s.name === cls.section);
 
         const key = `${teacher.id}-${subject?.id}-${section?.id}-${room?.id}-${cls.start}-${cls.end}`;
-
+        
+        const currentYear = new Date().getFullYear();
+        const nextYear = currentYear + 1;
         if (!groupedSchedules[key]) {
           groupedSchedules[key] = {
             teacher_id: teacher.id,
@@ -878,6 +883,7 @@ const runAutoSchedule = async (req, res) => {
             days: [],
             semester: subject?.semester || null,
             school_year: subject?.school_year || null,
+            sy: `${currentYear}-${nextYear}`,
             total_count: section.total_count,
             total_duration: calculateDurationInTimeFormat(cls.start, cls.end),
           };

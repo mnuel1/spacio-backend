@@ -1,5 +1,6 @@
 const supabase = require('../../supabase');
 const getSchedulesQuery = require('../queries/coordinator').getSchedulesQuery;
+const { ensureAcademicPeriodId } = require("../utils");
 
 const dayAbbreviations = {
   Monday: 'M',
@@ -94,23 +95,25 @@ const createSChedule = async (req, res) => {
       end_time,
       total_copunt,
       semester,
-      school_year } = req.body;
+      school_year 
+    } = req.body;
 
-    days = abbreviateDays(days);
+    const scheduleData = await ensureAcademicPeriodId(supabase, {
+      subject_id,
+      teacher_id,
+      section_id,
+      room_id,
+      days: abbreviateDays(days),
+      start_time,
+      end_time,
+      total_copunt,
+      semester,
+      school_year,
+    });
+        
     const { data, error } = await supabase
       .from('teacher_schedules')
-      .insert({
-        subject_id,
-        teacher_id,
-        section_id,
-        room_id,
-        days,
-        start_time,
-        end_time,
-        total_copunt,
-        semester,
-        school_year
-      })
+      .insert(scheduleData)
       .select();
 
     if (error) throw error;

@@ -37,18 +37,18 @@ const scheduleOverview = async (id) => {
     const fullDays = parseAvailableDays(item.days);
     const isToday = fullDays.includes(currentDay);
 
-    const todayDate = now.format("YYYY-MM-DD");
-    const start = dayjs(
-      `${todayDate} ${item.start_time}`,
-      "YYYY-MM-DD HH:mm:ss"
-    );
-    const end = dayjs(`${todayDate} ${item.end_time}`, "YYYY-MM-DD HH:mm:ss");
-
-    let status = "upcoming";
-
+    // Only process today's classes if it's actually a scheduled day
     if (isToday) {
+      const todayDate = now.format("YYYY-MM-DD");
+      const start = dayjs(
+        `${todayDate} ${item.start_time}`,
+        "YYYY-MM-DD HH:mm:ss"
+      );
+      const end = dayjs(`${todayDate} ${item.end_time}`, "YYYY-MM-DD HH:mm:ss");
+
       totalClassesToday++;
 
+      let status = "upcoming";
       if (now.isBefore(start)) {
         status = "upcoming";
         upcomingToday.push(start);
@@ -58,50 +58,67 @@ const scheduleOverview = async (id) => {
       } else {
         status = "current";
       }
+
       classes.push({
         id: item.id,
-        subject: item.subjects.subject,
-        code: item.subjects.subject_code,
-        section: item.sections.name,
+        subject: item.subjects?.subject || "Unknown",
+        code: item.subjects?.subject_code || "N/A",
+        section: item.sections?.name || "Unknown",
         time: `${start.format("HH:mm")} - ${end.format("HH:mm")}`,
-        room: item.rooms.room_title,
+        room: item.room?.room_title || "TBA",
         students: item.total_count,
         status,
       });
     }
 
+    // Find next occurrence of this class (including today if not yet passed)
     let scheduledDateTime = null;
 
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 14; i++) {
+      // Look ahead 2 weeks
       const checkDate = now.add(i, "day");
-      if (fullDays.includes(checkDate.format("dddd"))) {
-        scheduledDateTime = dayjs(
+      const dayName = checkDate.format("dddd");
+
+      if (fullDays.includes(dayName)) {
+        const classDateTime = dayjs(
           `${checkDate.format("YYYY-MM-DD")} ${item.start_time}`,
           "YYYY-MM-DD HH:mm:ss"
         );
-        break;
+
+        // Only include if it's in the future
+        if (classDateTime.isAfter(now)) {
+          scheduledDateTime = classDateTime;
+          break;
+        }
       }
     }
 
-    // 🛡️ Ensure scheduledDateTime is a valid Dayjs object
+    // Add to all classes list for upcoming classes display
     if (scheduledDateTime && scheduledDateTime.isValid()) {
       const timeUntil = scheduledDateTime.fromNow();
       const readableDate = scheduledDateTime.format("dddd, MMMM D, YYYY");
+      const isToday = scheduledDateTime.isSame(now, "day");
+      const isTomorrow = scheduledDateTime.isSame(now.add(1, "day"), "day");
+
+      let classStatus = "upcoming";
+      if (isToday) {
+        classStatus = "today";
+      } else if (isTomorrow) {
+        classStatus = "tomorrow";
+      }
 
       allClasses.push({
         id: item.id,
-        subject: item.subjects.subject,
-        code: item.subjects.subject_code,
-        section: item.sections.name,
-        time: `${start.format("HH:mm")} - ${end.format("HH:mm")}`,
-        room: item.rooms.room_title,
+        subject: item.subjects?.subject || "Unknown",
+        code: item.subjects?.subject_code || "N/A",
+        section: item.sections?.name || "Unknown",
+        time: `${item.start_time.slice(0, 5)} - ${item.end_time.slice(0, 5)}`,
+        room: item.room?.room_title || "TBA",
         students: item.total_count,
         date: readableDate,
         timeUntil: timeUntil,
-        status: timeUntil,
+        status: classStatus,
       });
-    } else {
-      console.warn(`Invalid scheduledDateTime for item ID ${item.id}`);
     }
   });
 
@@ -111,13 +128,26 @@ const scheduleOverview = async (id) => {
         .format("hh:mm A")
     : null;
 
+  // Sort all classes by scheduled time
+  allClasses.sort((a, b) => {
+    const timeA = dayjs(
+      a.date + " " + a.time.split(" - ")[0],
+      "dddd, MMMM D, YYYY HH:mm"
+    );
+    const timeB = dayjs(
+      b.date + " " + b.time.split(" - ")[0],
+      "dddd, MMMM D, YYYY HH:mm"
+    );
+    return timeA.valueOf() - timeB.valueOf();
+  });
+
   return {
     currentTime: now.format("hh:mm A"),
     date: now.format("dddd, MMMM D, YYYY"),
     todaysClasses: {
       metric: totalClassesToday,
       completedClass: completedToday,
-      nextClass: nextClassTime,
+      nextClass: totalClassesToday > 0 ? nextClassTime : "No classes today",
     },
     classes,
     allClasses,
@@ -212,7 +242,7 @@ const loadOverview = async (id) => {
         id: entry.sections.name,
         students: entry.total_count,
         schedule: scheduleStr,
-        room: entry.rooms.room_title,
+        room: entry.room?.room_title || "TBA",
       });
       subject.totalStudents += entry.total_count;
       subject.weeklyHours += entry.subjects.units;
@@ -285,38 +315,36 @@ const getMySchedules = async (req, res) => {
       throw error;
     }
 
-    const events = data.map((item, index) => {
-      const [hour, minute, second] = item.start_time.split(":").map(Number);
-      const [endHour, endMinute] = item.end_time.split(":").map(Number);
-
-      const start = new Date();
-      const end = new Date();
-
-      start.setHours(hour, minute, second || 0, 0);
-      end.setHours(endHour, endMinute, 0, 0);
-
-      return {
-        id: `event-${index + 1}`,
-        title: item.subjects.subject_code,
-        subject: item.subjects.subject,
-        subjectCode: item.subjects.subject_code,
-        room: item.rooms?.room_title || "TBA",
-        section: item.sections?.name || "Unknown",
-        students: item.total_count || 0,
-        start,
-        end,
-        type: "lecture", // hardcoded or derive from subject if available
-        status: "Scheduled",
-        description: "", // optional: if subject.description available
-        objectives: [], // optional: fill if available
-        materials: [], // optional: fill if available
-      };
-    });
+    // Return schedule data in the format expected by frontend
+    const schedules = data.map((item) => ({
+      id: item.id,
+      teacher_id: parseInt(id),
+      subject_id: item.subjects?.id,
+      room_id: item.room?.id,
+      section_id: item.sections?.id,
+      start_time: item.start_time,
+      end_time: item.end_time,
+      total_count: item.total_count || 0,
+      days: item.days, // Include days field for frontend transformation
+      subject: {
+        id: item.subjects?.id,
+        subject: item.subjects?.subject || "Unknown Subject",
+        subject_code: item.subjects?.subject_code || "N/A",
+      },
+      room: {
+        id: item.room?.id,
+        room_title: item.room?.room_title || "TBA",
+      },
+      section: {
+        id: item.sections?.id,
+        name: item.sections?.name || "Unknown",
+      },
+    }));
 
     return res.status(200).json({
       title: "Success",
-      message: "Schedules get successfully.",
-      data: events,
+      message: "Schedules retrieved successfully.",
+      data: schedules,
     });
   } catch (error) {
     console.error("Error fetching schedules:", error);
@@ -390,7 +418,7 @@ const getMyLoad = async (req, res) => {
           day: dayMap[d],
           startTime: entry.start_time.slice(0, 5), // "13:00:00" -> "13:00"
           endTime: entry.end_time.slice(0, 5),
-          room: entry.rooms.room_id,
+          room: entry.room?.room_id || "TBA",
         });
       }
     });
@@ -604,6 +632,202 @@ const checkMyAvailabilityStatus = async (req, res) => {
   }
 };
 
+const getMyProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get teacher profile with user profile data
+    const { data, error } = await supabase
+      .from("teacher_profile")
+      .select(
+        `
+        id,
+        specializations,
+        certifications,
+        avail_days,
+        pref_time,
+        user_profile:teacher_profile_user_id_fkey (
+          id,
+          user_id,
+          name,
+          email,
+          identity_id
+        )
+      `
+      )
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    // Parse specializations and certifications
+    const specializations = data.specializations
+      ? JSON.parse(data.specializations)
+      : [];
+    const certifications = data.certifications
+      ? JSON.parse(data.certifications)
+      : [];
+
+    // Check availability status
+    const hasAvailDays = data.avail_days && data.avail_days.trim() !== "";
+    const hasPrefTime = data.pref_time && data.pref_time.trim() !== "";
+    const hasAvailability = hasAvailDays && hasPrefTime;
+
+    const response = {
+      id: data.id,
+      employeeId: data.user_profile?.user_id || "",
+      name: data.user_profile?.name || "Unnamed",
+      email: data.user_profile?.email || "",
+      identityId: data.user_profile?.identity_id || "",
+      specializations,
+      certifications,
+      hasAvailability,
+      needsAvailabilitySetup: !hasAvailability,
+      needsSpecializationSetup: specializations.length === 0,
+    };
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Profile retrieved successfully.",
+      data: response,
+    });
+  } catch (error) {
+    console.error("Error getting faculty profile:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
+const updateMyProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { specializations, certifications } = req.body;
+
+    // Validate input
+    if (!Array.isArray(specializations) && !Array.isArray(certifications)) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Invalid input data",
+        data: null,
+      });
+    }
+
+    const updateData = {};
+
+    if (Array.isArray(specializations)) {
+      updateData.specializations = JSON.stringify(specializations);
+    }
+
+    if (Array.isArray(certifications)) {
+      updateData.certifications = JSON.stringify(certifications);
+    }
+
+    const { data, error } = await supabase
+      .from("teacher_profile")
+      .update(updateData)
+      .eq("id", id)
+      .select();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Profile updated successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error("Error updating faculty profile:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
+const checkOnboardingStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get teacher profile data
+    const { data, error } = await supabase
+      .from("teacher_profile")
+      .select(
+        `
+        id,
+        specializations,
+        certifications,
+        avail_days,
+        pref_time,
+        user_profile:teacher_profile_user_id_fkey (
+          id,
+          user_id,
+          name,
+          email,
+          identity_id
+        )
+      `
+      )
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    // Parse specializations and certifications
+    const specializations = data.specializations
+      ? JSON.parse(data.specializations)
+      : [];
+    const certifications = data.certifications
+      ? JSON.parse(data.certifications)
+      : [];
+
+    // Check availability status
+    const hasAvailDays = data.avail_days && data.avail_days.trim() !== "";
+    const hasPrefTime = data.pref_time && data.pref_time.trim() !== "";
+    const hasAvailability = hasAvailDays && hasPrefTime;
+
+    // Check if onboarding is needed
+    const needsSpecializationSetup = specializations.length === 0;
+    const needsAvailabilitySetup = !hasAvailability;
+    const needsOnboarding = needsSpecializationSetup || needsAvailabilitySetup;
+
+    const response = {
+      id: data.id,
+      employeeId: data.user_profile?.user_id || "",
+      name: data.user_profile?.name || "Unnamed",
+      email: data.user_profile?.email || "",
+      needsOnboarding,
+      needsSpecializationSetup,
+      needsAvailabilitySetup,
+      hasSpecializations: specializations.length > 0,
+      hasAvailability,
+      onboardingStatus: needsOnboarding ? "incomplete" : "complete",
+    };
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Onboarding status retrieved successfully.",
+      data: response,
+    });
+  } catch (error) {
+    console.error("Error checking faculty onboarding status:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
 module.exports = {
   getDashboard,
   getMySchedules,
@@ -611,4 +835,7 @@ module.exports = {
   getPrefTimeDay,
   savePrefTImeDay,
   checkMyAvailabilityStatus,
+  getMyProfile,
+  updateMyProfile,
+  checkOnboardingStatus,
 };

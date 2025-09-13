@@ -27,7 +27,7 @@ export const getMyLoadQuery = `
     id, subject_code, subject, units
   ),
   rooms:teacher_schedules_room_id_fkey (
-    id, room_id
+    id, room_id, room_title
   ),
   sections:teacher_schedules_section_id_fkey (
     id, name
