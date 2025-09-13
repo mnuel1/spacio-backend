@@ -60,11 +60,11 @@ const scheduleOverview = async (id) => {
       }
       classes.push({
         id: item.id,
-        subject: item.subjects.subject,
-        code: item.subjects.subject_code,
-        section: item.sections.name,
+        subject: item.subjects?.subject || "Unknown",
+        code: item.subjects?.subject_code || "N/A",
+        section: item.sections?.name || "Unknown",
         time: `${start.format("HH:mm")} - ${end.format("HH:mm")}`,
-        room: item.rooms.room_title,
+        room: item.room?.room_title || "TBA",
         students: item.total_count,
         status,
       });
@@ -90,11 +90,11 @@ const scheduleOverview = async (id) => {
 
       allClasses.push({
         id: item.id,
-        subject: item.subjects.subject,
-        code: item.subjects.subject_code,
-        section: item.sections.name,
+        subject: item.subjects?.subject || "Unknown",
+        code: item.subjects?.subject_code || "N/A",
+        section: item.sections?.name || "Unknown",
         time: `${start.format("HH:mm")} - ${end.format("HH:mm")}`,
-        room: item.rooms.room_title,
+        room: item.room?.room_title || "TBA",
         students: item.total_count,
         date: readableDate,
         timeUntil: timeUntil,
@@ -212,7 +212,7 @@ const loadOverview = async (id) => {
         id: entry.sections.name,
         students: entry.total_count,
         schedule: scheduleStr,
-        room: entry.rooms.room_title,
+        room: entry.room?.room_title || "TBA",
       });
       subject.totalStudents += entry.total_count;
       subject.weeklyHours += entry.subjects.units;
@@ -388,7 +388,7 @@ const getMyLoad = async (req, res) => {
           day: dayMap[d],
           startTime: entry.start_time.slice(0, 5), // "13:00:00" -> "13:00"
           endTime: entry.end_time.slice(0, 5),
-          room: entry.rooms.room_id,
+          room: entry.room?.room_id || "TBA",
         });
       }
     });
