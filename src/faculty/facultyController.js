@@ -285,38 +285,36 @@ const getMySchedules = async (req, res) => {
       throw error;
     }
 
-    const events = data.map((item, index) => {
-      const [hour, minute, second] = item.start_time.split(":").map(Number);
-      const [endHour, endMinute] = item.end_time.split(":").map(Number);
-
-      const start = new Date();
-      const end = new Date();
-
-      start.setHours(hour, minute, second || 0, 0);
-      end.setHours(endHour, endMinute, 0, 0);
-
-      return {
-        id: `event-${index + 1}`,
-        title: item.subjects.subject_code,
-        subject: item.subjects.subject,
-        subjectCode: item.subjects.subject_code,
-        room: item.rooms?.room_title || "TBA",
-        section: item.sections?.name || "Unknown",
-        students: item.total_count || 0,
-        start,
-        end,
-        type: "lecture", // hardcoded or derive from subject if available
-        status: "Scheduled",
-        description: "", // optional: if subject.description available
-        objectives: [], // optional: fill if available
-        materials: [], // optional: fill if available
-      };
-    });
+    // Return schedule data in the format expected by frontend
+    const schedules = data.map((item) => ({
+      id: item.id,
+      teacher_id: parseInt(id),
+      subject_id: item.subjects?.id,
+      room_id: item.room?.id,
+      section_id: item.sections?.id,
+      start_time: item.start_time,
+      end_time: item.end_time,
+      total_count: item.total_count || 0,
+      days: item.days, // Include days field for frontend transformation
+      subject: {
+        id: item.subjects?.id,
+        subject: item.subjects?.subject || "Unknown Subject",
+        subject_code: item.subjects?.subject_code || "N/A",
+      },
+      room: {
+        id: item.room?.id,
+        room_title: item.room?.room_title || "TBA",
+      },
+      section: {
+        id: item.sections?.id,
+        name: item.sections?.name || "Unknown",
+      },
+    }));
 
     return res.status(200).json({
       title: "Success",
-      message: "Schedules get successfully.",
-      data: events,
+      message: "Schedules retrieved successfully.",
+      data: schedules,
     });
   } catch (error) {
     console.error("Error fetching schedules:", error);

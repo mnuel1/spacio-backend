@@ -4,16 +4,16 @@ export const getMySchedulesQuery = `
     start_time,
     end_time,
     days,
-    subjects:teacher_schedules_subject_id_fkey(
+    subjects (
         id, subject_code, subject
     ),
-    rooms:teacher_schedules_room_id_fkey(
+    room (
         id, room_title
     ),
-    sections:teacher_schedules_section_id_fkey(
+    sections (
         id, name
     )
-`
+`;
 
 export const getMyLoadQuery = `
   id,
