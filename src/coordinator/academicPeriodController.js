@@ -256,6 +256,79 @@ const appointOfficial = async (req, res) => {
   }
 };
 
+// Debug endpoint to check current period and schedules
+const debugCurrentPeriod = async (req, res) => {
+  try {
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+
+    // Get total schedules in system
+    const { data: allSchedules, error: allError } = await supabase
+      .from("teacher_schedules")
+      .select("id, semester, school_year, academic_period_id");
+
+    if (allError) throw allError;
+
+    // Get schedules for current period
+    let currentPeriodSchedules = [];
+    if (currentPeriod.id) {
+      const { data: periodSchedules, error: periodError } = await supabase
+        .from("teacher_schedules")
+        .select("id, semester, school_year, academic_period_id")
+        .eq("academic_period_id", currentPeriod.id);
+
+      if (!periodError) currentPeriodSchedules = periodSchedules;
+    } else {
+      const { data: periodSchedules, error: periodError } = await supabase
+        .from("teacher_schedules")
+        .select("id, semester, school_year, academic_period_id")
+        .eq("semester", currentPeriod.semester)
+        .eq("school_year", currentPeriod.school_year);
+
+      if (!periodError) currentPeriodSchedules = periodSchedules;
+    }
+
+    // Get subjects for current period
+    let currentPeriodSubjects = [];
+    if (currentPeriod.id) {
+      const { data: subjects, error: subError } = await supabase
+        .from("subjects")
+        .select("id, subject_code, semester, school_year, academic_period_id")
+        .eq("academic_period_id", currentPeriod.id);
+
+      if (!subError) currentPeriodSubjects = subjects;
+    } else {
+      const { data: subjects, error: subError } = await supabase
+        .from("subjects")
+        .select("id, subject_code, semester, school_year, academic_period_id")
+        .eq("semester", currentPeriod.semester)
+        .eq("school_year", currentPeriod.school_year);
+
+      if (!subError) currentPeriodSubjects = subjects;
+    }
+
+    return res.status(200).json({
+      title: "Debug Info",
+      message: "Current period debug information",
+      data: {
+        currentPeriod,
+        totalSchedulesInSystem: allSchedules.length,
+        schedulesForCurrentPeriod: currentPeriodSchedules.length,
+        subjectsForCurrentPeriod: currentPeriodSubjects.length,
+        allSchedulesSample: allSchedules.slice(0, 5),
+        currentPeriodSchedulesSample: currentPeriodSchedules.slice(0, 5),
+        currentPeriodSubjectsSample: currentPeriodSubjects.slice(0, 5),
+      },
+    });
+  } catch (error) {
+    console.error("Debug error:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Debug failed",
+      data: null,
+    });
+  }
+};
+
 module.exports = {
   getCurrentPeriod,
   getAcademicPeriods,
@@ -263,4 +336,5 @@ module.exports = {
   setCurrentPeriod,
   getOfficialsBoard,
   appointOfficial,
+  debugCurrentPeriod,
 };

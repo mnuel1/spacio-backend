@@ -48,6 +48,7 @@ const {
   setCurrentPeriod,
   getOfficialsBoard,
   appointOfficial,
+  debugCurrentPeriod,
 } = require("../coordinator/academicPeriodController");
 
 const router = express.Router();
@@ -100,5 +101,8 @@ router.put("/academic-periods/:id/set-current", setCurrentPeriod);
 // Officials Board Routes
 router.get("/officials-board", getOfficialsBoard);
 router.post("/officials-board/appoint", appointOfficial);
+
+// Debug Route (remove in production)
+router.get("/debug/current-period", debugCurrentPeriod);
 
 module.exports = router;

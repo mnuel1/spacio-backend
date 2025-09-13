@@ -73,7 +73,7 @@ const getLoad = async (req, res) => {
         )
       `);
 
-    // Apply period filter
+    // Apply period filter - prioritize academic_period_id if available
     if (periodFilter.academic_period_id) {
       scheduleQuery = scheduleQuery.eq(
         "academic_period_id",
@@ -621,8 +621,21 @@ const getRooms = async () => {
   return data;
 };
 
-const getSubjects = async () => {
-  const { data, error } = await supabase.from("subjects").select(`*`);
+const getSubjects = async (currentPeriod = null) => {
+  let query = supabase.from("subjects").select(`*`);
+
+  // Filter by current academic period if provided
+  if (currentPeriod) {
+    if (currentPeriod.id) {
+      query = query.eq("academic_period_id", currentPeriod.id);
+    } else {
+      query = query
+        .eq("semester", currentPeriod.semester)
+        .eq("school_year", currentPeriod.school_year);
+    }
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("Error fetching subjects:", error.message);
@@ -632,11 +645,24 @@ const getSubjects = async () => {
   return data;
 };
 
-const getSections = async () => {
-  const { data, error } = await supabase.from("sections").select(`
+const getSections = async (currentPeriod = null) => {
+  let query = supabase.from("sections").select(`
       *,
       student_sections:student_sections(count)
     `);
+
+  // Filter by current academic period if provided
+  if (currentPeriod) {
+    if (currentPeriod.id) {
+      query = query.eq("academic_period_id", currentPeriod.id);
+    } else {
+      query = query
+        .eq("semester", currentPeriod.semester)
+        .eq("year", currentPeriod.school_year);
+    }
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("Error fetching sections:", error.message);
@@ -655,25 +681,26 @@ const runAutoSchedule = async (req, res) => {
   try {
     const { selectedFacultyIds } = req.body || {};
 
+    // Get current academic period for scheduling
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+
     // If selective scheduling, only reset schedules for selected faculty
     const response =
       selectedFacultyIds && selectedFacultyIds.length > 0
-        ? await resetScheduleSelective(selectedFacultyIds)
-        : await resetSchedule();
+        ? await resetScheduleSelective(selectedFacultyIds, currentPeriod)
+        : await resetSchedule(currentPeriod);
 
     if (!response) throw "Something went wrong";
 
     const [teachers, rooms, subjects, sections] = await Promise.all([
       getTeachers(),
       getRooms(),
-      getSubjects(),
-      getSections(),
+      getSubjects(currentPeriod),
+      getSections(currentPeriod),
     ]);
 
-    // Get existing schedules to avoid conflicts with non-selected faculty
-    const { data: existingSchedules, error: schedError } = await supabase.from(
-      "teacher_schedules"
-    ).select(`
+    // Get existing schedules for current period to avoid conflicts with non-selected faculty
+    let existingSchedulesQuery = supabase.from("teacher_schedules").select(`
         teacher_id,
         room_id,
         days,
@@ -681,6 +708,21 @@ const runAutoSchedule = async (req, res) => {
         end_time,
         subject_id
       `);
+
+    // Filter by current academic period
+    if (currentPeriod.id) {
+      existingSchedulesQuery = existingSchedulesQuery.eq(
+        "academic_period_id",
+        currentPeriod.id
+      );
+    } else {
+      existingSchedulesQuery = existingSchedulesQuery
+        .eq("semester", currentPeriod.semester)
+        .eq("school_year", currentPeriod.school_year);
+    }
+
+    const { data: existingSchedules, error: schedError } =
+      await existingSchedulesQuery;
 
     if (schedError) throw schedError;
 
@@ -906,9 +948,19 @@ const runAutoSchedule = async (req, res) => {
                 continue;
               }
 
-              // 2. Check specialization
+              // 2. Check specialization (flexible matching)
               if (
-                !instructor.specializations.includes(subject.specialization)
+                subject.specialization &&
+                instructor.specializations.length > 0 &&
+                !instructor.specializations.some(
+                  (spec) =>
+                    spec
+                      .toLowerCase()
+                      .includes(subject.specialization.toLowerCase()) ||
+                    subject.specialization
+                      .toLowerCase()
+                      .includes(spec.toLowerCase())
+                )
               ) {
                 continue;
               }
@@ -1056,7 +1108,8 @@ const runAutoSchedule = async (req, res) => {
         const key = `${teacher.id}-${subject?.id}-${section?.id}-${room?.id}-${cls.start}-${cls.end}`;
 
         if (!groupedSchedules[key]) {
-          groupedSchedules[key] = {
+          // Use academic period data with fallback to subject data
+          const scheduleData = {
             teacher_id: teacher.id,
             subject_id: subject?.id || null,
             section_id: section?.id || null,
@@ -1064,11 +1117,20 @@ const runAutoSchedule = async (req, res) => {
             start_time: cls.start,
             end_time: cls.end,
             days: [],
-            semester: subject?.semester || null,
-            school_year: subject?.school_year || null,
             total_count: section.total_count,
             total_duration: calculateDurationInTimeFormat(cls.start, cls.end),
           };
+
+          // Add academic period ID if available, otherwise use semester/school_year
+          if (currentPeriod.id) {
+            scheduleData.academic_period_id = currentPeriod.id;
+          } else {
+            scheduleData.semester = subject?.semester || currentPeriod.semester;
+            scheduleData.school_year =
+              subject?.school_year || currentPeriod.school_year;
+          }
+
+          groupedSchedules[key] = scheduleData;
         }
 
         groupedSchedules[key].days.push(cls.day);
@@ -1098,8 +1160,21 @@ const runAutoSchedule = async (req, res) => {
       });
     });
 
+    console.log(
+      `Auto-schedule completed: ${
+        Object.values(groupedSchedules).length
+      } schedules created for ${filteredTeachers.length} teachers`
+    );
+
     const insertResults = await Promise.all(insertPromises);
     const insertErrors = insertResults.filter((r) => r.error);
+
+    if (insertErrors.length > 0) {
+      console.log(
+        "Insert errors:",
+        insertErrors.map((r) => r.error)
+      );
+    }
 
     // Only update loads for selected faculty
     const updatePromises = Object.entries(loadMap).map(
@@ -1131,8 +1206,23 @@ const runAutoSchedule = async (req, res) => {
   }
 };
 
-const resetSchedule = async () => {
-  await supabase.from("teacher_schedules").delete().neq("id", 0);
+const resetSchedule = async (currentPeriod = null) => {
+  let deleteQuery = supabase.from("teacher_schedules").delete();
+
+  // Only delete schedules for current academic period
+  if (currentPeriod) {
+    if (currentPeriod.id) {
+      deleteQuery = deleteQuery.eq("academic_period_id", currentPeriod.id);
+    } else {
+      deleteQuery = deleteQuery
+        .eq("semester", currentPeriod.semester)
+        .eq("school_year", currentPeriod.school_year);
+    }
+  } else {
+    deleteQuery = deleteQuery.neq("id", 0);
+  }
+
+  await deleteQuery;
 
   await supabase
     .from("teacher_profile")
@@ -1142,12 +1232,28 @@ const resetSchedule = async () => {
   return 1;
 };
 
-const resetScheduleSelective = async (selectedFacultyIds) => {
-  // Delete schedules only for selected faculty
-  await supabase
+const resetScheduleSelective = async (
+  selectedFacultyIds,
+  currentPeriod = null
+) => {
+  // Delete schedules only for selected faculty in current period
+  let deleteQuery = supabase
     .from("teacher_schedules")
     .delete()
     .in("teacher_id", selectedFacultyIds);
+
+  // Filter by current academic period
+  if (currentPeriod) {
+    if (currentPeriod.id) {
+      deleteQuery = deleteQuery.eq("academic_period_id", currentPeriod.id);
+    } else {
+      deleteQuery = deleteQuery
+        .eq("semester", currentPeriod.semester)
+        .eq("school_year", currentPeriod.school_year);
+    }
+  }
+
+  await deleteQuery;
 
   // Reset current_load only for selected faculty
   await supabase
