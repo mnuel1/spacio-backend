@@ -146,7 +146,7 @@ const addUsersByFile = async (req, res) => {
           email_verified: email_verified === "true" || email_verified === true,
         },
       });
-
+      // const error = 1
       if (error) {
         results.push({ email, success: false, error: error.message });
       } else {

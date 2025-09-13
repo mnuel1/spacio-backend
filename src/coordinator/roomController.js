@@ -164,7 +164,7 @@ const getRooms = async (req, res) => {
 
 const createRoom = async (req, res) => {
   try {
-    const { room_desc, floor, department_id } = req.body;
+    const { room_desc, floor, department_id, user_id } = req.body;
 
     const { data: latestRoom, error: fetchError } = await supabase
       .from('room')
@@ -197,7 +197,8 @@ const createRoom = async (req, res) => {
 
     if (error) throw error;
 
-
+    await supabase.from('activity_logs').insert({activity: `Created room (${room_desc}) on floor ${floor} for department ${department_id}`,by: user_id ?? null})
+    
     return res.status(201).json({
       title: 'Success',
       message: 'Room created successfully.',
@@ -216,7 +217,7 @@ const createRoom = async (req, res) => {
 const editRoom = async (req, res) => {
   try {
     const { id } = req.params;
-    const { room_title, room_desc, floor, department_id, status } = req.body;
+    const { room_title, room_desc, floor, department_id, status, user_id } = req.body;
 
     try {
       const { data, error } = await supabase
@@ -240,6 +241,8 @@ const editRoom = async (req, res) => {
           data: null
         });
       }
+
+      await supabase.from('activity_logs').insert({activity: `Edited room (${room_desc}) on floor ${floor} for department ${department_id}`,by: user_id ?? null})
 
       return res.status(200).json({
         title: 'Success',
@@ -268,6 +271,8 @@ const editRoom = async (req, res) => {
 }
 const deleteRoom = async (req, res) => {
   const { id } = req.params;
+  const { user_id } = req.body
+  
   try {
     const { data, error } = await supabase
       .from('room')
@@ -276,6 +281,8 @@ const deleteRoom = async (req, res) => {
       .select();
 
     if (error) throw error;
+
+    await supabase.from('activity_logs').insert({activity: `Room ${id} set to Inactive. This room will be not usable anymore.`,by: user_id ?? null})
 
     return res.status(200).json({
       title: 'Success',

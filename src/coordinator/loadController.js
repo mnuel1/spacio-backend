@@ -321,6 +321,10 @@ const addSubject = async (req, res) => {
       .update({ current_load: current_load + units })
       .eq("id", teacher_id);
 
+    await supabase.from("activity_logs").insert({
+      activity: `Added subject ${subject_id} to section ${section_id}, teacher ${teacher_id}, room ${room_id}, ${abbrevDays} ${start_time}-${end_time}`,
+      by: req.body.user_id ?? null
+    });
     return res.status(201).json({
       title: "Success",
       message: "Subject added successfully.",
@@ -348,6 +352,11 @@ const removeSubject = async (req, res) => {
       .select();
 
     if (error) throw error;
+
+    await supabase.from("activity_logs").insert({
+      activity: `Removed subject assignment (schedule ID: ${id})`,
+      by: req.body.user_id ?? null
+    });
 
     return res.status(200).json({
       title: "Success",
@@ -382,6 +391,11 @@ const reassignSubject = async (req, res) => {
       .select();
 
     if (error) throw error;
+
+    await supabase.from("activity_logs").insert({
+      activity: `Reassigned subject (schedule ID: ${id}) → ${JSON.stringify(updateFields)}`,
+      by: req.body.user_id ?? null
+    });
 
     return res.status(200).json({
       title: "Success",
@@ -932,6 +946,13 @@ const runAutoSchedule = async (req, res) => {
 
     await Promise.all(updatePromises);
 
+    await supabase.from("activity_logs").insert({
+      activity: selectedFacultyIds && selectedFacultyIds.length > 0
+        ? `Auto-scheduled classes for selected faculty: ${selectedFacultyIds.join(", ")}`
+        : "Auto-scheduled classes for all faculty",
+      by: req.body.user_id ?? null
+    });
+    
     return res.status(200).json({
       title: "Success",
       message: "Schedule generated",

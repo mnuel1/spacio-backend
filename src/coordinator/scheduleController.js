@@ -115,6 +115,11 @@ const createSChedule = async (req, res) => {
 
     if (error) throw error;
 
+    await supabase.from("activity_logs").insert({
+      activity: `Created schedule for subject ${subject_id}, teacher ${teacher_id}, section ${section_id}, room ${room_id}, ${days} ${start_time}-${end_time}`,
+      by: req.body.user_id ?? null
+    });
+
     return res.status(201).json({
       title: "Success",
       message: "Schedule created successfully.",
@@ -174,6 +179,11 @@ const updateSchedule = async (req, res) => {
       });
     }
 
+    await supabase.from("activity_logs").insert({
+      activity: `Updated schedule ${id} → subject ${subject_id}, teacher ${teacher_id}, section ${section_id}, room ${room_id}, ${days} ${start_time}-${end_time}`,
+      by: req.body.user_id ?? null
+    });
+
     return res.status(200).json({
       title: "Success",
       message: "Schedule updated successfully.",
@@ -208,7 +218,12 @@ const deleteSchedule = async (req, res) => {
         data: null,
       });
     }
-
+    
+    await supabase.from("activity_logs").insert({
+      activity: `Deleted schedule ${id}`,
+      by: req.body.user_id ?? null
+    });
+    
     return res.status(200).json({
       title: "Success",
       message: "Schedule deleted successfully.",
