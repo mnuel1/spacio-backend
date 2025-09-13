@@ -220,3 +220,10 @@ export const ensureAcademicPeriodId = async (supabase, data) => {
     school_year: data.school_year || currentPeriod.school_year,
   };
 };
+export const getSy = () => {
+
+  const currentYear = new Date().getFullYear();
+  const nextYear = currentYear + 1;
+  return `${currentYear}-${nextYear}`
+}
+        

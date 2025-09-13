@@ -1,6 +1,9 @@
 const getFacultyQuery = require("../queries/coordinator.js").getFacultyQuery;
 const supabase = require("../../supabase");
 const parseAvailableDays = require("../utils.js").parseAvailableDays;
+const {
+  getSy
+} = require("../utils.js")
 
 const combineFullName = (firstName, middleName, lastName) => {
   return [firstName, middleName, lastName].filter(Boolean).join(" ");
@@ -26,6 +29,8 @@ const getFaculty = async (req, res) => {
       const specializations = profile.specializations
         ? profile.specializations.replace(/(^"|"$)/g, "").split('","')
         : [];
+
+      
 
       return {
         id: user.id,
@@ -86,7 +91,7 @@ const getFaculty = async (req, res) => {
             units: s.subjects?.units,
             hours: s.subjects?.total_hours,
             semester: s.subjects?.semester,
-            academicYear: s.subjects?.school_year,
+            academicYear: getSy(),
           })) || [],
         profileImage: user.profile_image,
         isActive: user.status,
@@ -431,7 +436,7 @@ const updateFaculty = async (req, res) => {
           units: s.subjects?.units,
           hours: s.subjects?.total_hours,
           semester: s.subjects?.semester,
-          academicYear: s.subjects?.school_year,
+          academicYear: getSy(),
         })) || [],
       profileImage: user.profile_image,
       isActive: user.status,

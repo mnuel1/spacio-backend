@@ -110,7 +110,8 @@ const facultyOverview = async () => {
       if (status === 'full' && totalHours > maxLoad) {
         overloadedFaculty++;
       }
-
+      const currentYear = new Date().getFullYear();
+      const nextYear = currentYear + 1;
       withLoad.push({
         id: f.id,
         name: f.name,
@@ -128,7 +129,7 @@ const facultyOverview = async () => {
           totalHours: sch.subjects?.total_hours,
           units: sch.subjects?.units,
           semester: sch.subjects?.semester,
-          schoolYear: sch.subjects?.school_year
+          schoolYear: `${currentYear}-${nextYear}`,
         })),
         loadSummary: {
           subjectsCount: schedules.length,

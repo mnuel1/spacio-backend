@@ -14,6 +14,7 @@ const {
   getCurrentAcademicPeriod,
   getAcademicPeriodFilter,
   ensureAcademicPeriodId,
+  getSy
 } = require("../utils.js");
 
 const getLoad = async (req, res) => {
@@ -114,7 +115,7 @@ const getLoad = async (req, res) => {
           units: sched.subjects?.units,
           hours,
           semester: sched.subjects?.semester,
-          academicYear: sched.subjects?.school_year,
+          academicYear: getSy(),
           section: sched.sections?.name,
           enrollmentCount: sched.total_count,
           scheduleTime: `${sched.days} ${sched.start_time.slice(
@@ -870,8 +871,6 @@ const runAutoSchedule = async (req, res) => {
 
         const key = `${teacher.id}-${subject?.id}-${section?.id}-${room?.id}-${cls.start}-${cls.end}`;
         
-        const currentYear = new Date().getFullYear();
-        const nextYear = currentYear + 1;
         if (!groupedSchedules[key]) {
           groupedSchedules[key] = {
             teacher_id: teacher.id,
@@ -882,8 +881,7 @@ const runAutoSchedule = async (req, res) => {
             end_time: cls.end,
             days: [],
             semester: subject?.semester || null,
-            school_year: subject?.school_year || null,
-            sy: `${currentYear}-${nextYear}`,
+            school_year: subject?.school_year || null,            
             total_count: section.total_count,
             total_duration: calculateDurationInTimeFormat(cls.start, cls.end),
           };
@@ -1262,7 +1260,7 @@ const sectionSchedule = async (req, res) => {
           teacher_id: row.teacher_profile?.id,
           section_id: row.sections?.id,
           section: row.sections?.name,
-          year: row.sections?.year,
+          year: getSy(),
           semester: row.sections?.semester,
           day,
           start: row.start_time,

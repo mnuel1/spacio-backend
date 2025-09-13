@@ -50,16 +50,6 @@ const {
 
 const { getDashboard } = require("../coordinator/dashboardController");
 
-const {
-  getCurrentPeriod,
-  getAcademicPeriods,
-  createAcademicPeriod,
-  setCurrentPeriod,
-  getOfficialsBoard,
-  appointOfficial,
-  debugCurrentPeriod,
-} = require("../coordinator/academicPeriodController");
-
 const router = express.Router();
 const multer = require("multer");
 

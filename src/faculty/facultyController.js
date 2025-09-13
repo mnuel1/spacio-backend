@@ -3,6 +3,7 @@ const {
   generateDayAbbrev,
   parseAvailableDays,
   generateTimeSlots,
+  getSy
 } = require("../utils");
 const { getMyLoadQuery, getMySchedulesQuery } = require("../queries/faculty");
 
@@ -37,14 +38,6 @@ const scheduleOverview = async (id) => {
     const fullDays = parseAvailableDays(item.days);
     const isToday = fullDays.includes(currentDay);
 
-    // Only process today's classes if it's actually a scheduled day
-    if (isToday) {
-      const todayDate = now.format("YYYY-MM-DD");
-      const start = dayjs(
-        `${todayDate} ${item.start_time}`,
-        "YYYY-MM-DD HH:mm:ss"
-      );
-      const end = dayjs(`${todayDate} ${item.end_time}`, "YYYY-MM-DD HH:mm:ss");
     // Only process today's classes if it's actually a scheduled day
     if (isToday) {
       const todayDate = now.format("YYYY-MM-DD");
@@ -391,7 +384,7 @@ const getMyLoad = async (req, res) => {
           type: "lecture",
           semester:
             entry.semester === "1st" ? "First Semester" : "Second Semester",
-          academicYear: entry.school_year,
+          academicYear: getSy(),
           sections: [],
         };
       }
