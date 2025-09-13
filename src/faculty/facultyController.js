@@ -632,6 +632,202 @@ const checkMyAvailabilityStatus = async (req, res) => {
   }
 };
 
+const getMyProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get teacher profile with user profile data
+    const { data, error } = await supabase
+      .from("teacher_profile")
+      .select(
+        `
+        id,
+        specializations,
+        certifications,
+        avail_days,
+        pref_time,
+        user_profile:teacher_profile_user_id_fkey (
+          id,
+          user_id,
+          name,
+          email,
+          identity_id
+        )
+      `
+      )
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    // Parse specializations and certifications
+    const specializations = data.specializations
+      ? JSON.parse(data.specializations)
+      : [];
+    const certifications = data.certifications
+      ? JSON.parse(data.certifications)
+      : [];
+
+    // Check availability status
+    const hasAvailDays = data.avail_days && data.avail_days.trim() !== "";
+    const hasPrefTime = data.pref_time && data.pref_time.trim() !== "";
+    const hasAvailability = hasAvailDays && hasPrefTime;
+
+    const response = {
+      id: data.id,
+      employeeId: data.user_profile?.user_id || "",
+      name: data.user_profile?.name || "Unnamed",
+      email: data.user_profile?.email || "",
+      identityId: data.user_profile?.identity_id || "",
+      specializations,
+      certifications,
+      hasAvailability,
+      needsAvailabilitySetup: !hasAvailability,
+      needsSpecializationSetup: specializations.length === 0,
+    };
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Profile retrieved successfully.",
+      data: response,
+    });
+  } catch (error) {
+    console.error("Error getting faculty profile:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
+const updateMyProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { specializations, certifications } = req.body;
+
+    // Validate input
+    if (!Array.isArray(specializations) && !Array.isArray(certifications)) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Invalid input data",
+        data: null,
+      });
+    }
+
+    const updateData = {};
+
+    if (Array.isArray(specializations)) {
+      updateData.specializations = JSON.stringify(specializations);
+    }
+
+    if (Array.isArray(certifications)) {
+      updateData.certifications = JSON.stringify(certifications);
+    }
+
+    const { data, error } = await supabase
+      .from("teacher_profile")
+      .update(updateData)
+      .eq("id", id)
+      .select();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Profile updated successfully.",
+      data,
+    });
+  } catch (error) {
+    console.error("Error updating faculty profile:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
+const checkOnboardingStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get teacher profile data
+    const { data, error } = await supabase
+      .from("teacher_profile")
+      .select(
+        `
+        id,
+        specializations,
+        certifications,
+        avail_days,
+        pref_time,
+        user_profile:teacher_profile_user_id_fkey (
+          id,
+          user_id,
+          name,
+          email,
+          identity_id
+        )
+      `
+      )
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    // Parse specializations and certifications
+    const specializations = data.specializations
+      ? JSON.parse(data.specializations)
+      : [];
+    const certifications = data.certifications
+      ? JSON.parse(data.certifications)
+      : [];
+
+    // Check availability status
+    const hasAvailDays = data.avail_days && data.avail_days.trim() !== "";
+    const hasPrefTime = data.pref_time && data.pref_time.trim() !== "";
+    const hasAvailability = hasAvailDays && hasPrefTime;
+
+    // Check if onboarding is needed
+    const needsSpecializationSetup = specializations.length === 0;
+    const needsAvailabilitySetup = !hasAvailability;
+    const needsOnboarding = needsSpecializationSetup || needsAvailabilitySetup;
+
+    const response = {
+      id: data.id,
+      employeeId: data.user_profile?.user_id || "",
+      name: data.user_profile?.name || "Unnamed",
+      email: data.user_profile?.email || "",
+      needsOnboarding,
+      needsSpecializationSetup,
+      needsAvailabilitySetup,
+      hasSpecializations: specializations.length > 0,
+      hasAvailability,
+      onboardingStatus: needsOnboarding ? "incomplete" : "complete",
+    };
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Onboarding status retrieved successfully.",
+      data: response,
+    });
+  } catch (error) {
+    console.error("Error checking faculty onboarding status:", error.message);
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
 module.exports = {
   getDashboard,
   getMySchedules,
@@ -639,4 +835,7 @@ module.exports = {
   getPrefTimeDay,
   savePrefTImeDay,
   checkMyAvailabilityStatus,
+  getMyProfile,
+  updateMyProfile,
+  checkOnboardingStatus,
 };
