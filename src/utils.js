@@ -116,12 +116,11 @@ export const getRandomSection = (sections, sem, sy) => {
   const filtered = sections.filter(
     (sec) => sec.semester.trim() === sem.trim() && sec.year.trim() === sy.trim()
   );
-  
+
   if (filtered.length === 0) return null;
 
   return filtered[Math.floor(Math.random() * filtered.length)];
 };
-
 
 export const isRoomAvailable = (room, day, start, end) => {
   const bookings = roomBookings[day] || [];
@@ -147,5 +146,68 @@ export const calculateDurationInTimeFormat = (start, end) => {
 };
 
 export const roundToSlot = (minutes, slotSize = 60) => {
-  return Math.ceil(minutes / (slotSize)) * slotSize;
-}
+  return Math.ceil(minutes / slotSize) * slotSize;
+};
+
+// Academic Period Management Utilities
+export const getCurrentAcademicPeriod = async (supabase) => {
+  try {
+    const { data, error } = await supabase
+      .from("academic_periods")
+      .select("*")
+      .eq("is_current", true)
+      .single();
+
+    if (error || !data) {
+      // Fallback to default values if no current period is set
+      return {
+        id: null,
+        semester: "1st",
+        school_year: "2024-2025",
+        is_current: true,
+        status: "Active",
+      };
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Error fetching current academic period:", error);
+    return {
+      id: null,
+      semester: "1st",
+      school_year: "2024-2025",
+      is_current: true,
+      status: "Active",
+    };
+  }
+};
+
+export const getAcademicPeriodFilter = async (supabase) => {
+  const currentPeriod = await getCurrentAcademicPeriod(supabase);
+
+  // Return filter object that can be used in queries
+  if (currentPeriod.id) {
+    return { academic_period_id: currentPeriod.id };
+  } else {
+    return {
+      semester: currentPeriod.semester,
+      school_year: currentPeriod.school_year,
+    };
+  }
+};
+
+export const ensureAcademicPeriodId = async (supabase, data) => {
+  const currentPeriod = await getCurrentAcademicPeriod(supabase);
+
+  // If we have a current period ID, add it to the data
+  if (currentPeriod.id) {
+    return { ...data, academic_period_id: currentPeriod.id };
+  }
+
+  // Otherwise, ensure semester and school_year are set
+  return {
+    ...data,
+    semester: data.semester || currentPeriod.semester,
+    school_year: data.school_year || currentPeriod.school_year,
+  };
+};

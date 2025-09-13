@@ -29,7 +29,7 @@ const {
   getConflicts,
   updateConflict,
   checkTeachersAvailability,
-  sectionSchedule
+  sectionSchedule,
 } = require("../coordinator/loadController");
 
 const {
@@ -40,6 +40,15 @@ const {
 } = require("../coordinator/userController");
 
 const { getDashboard } = require("../coordinator/dashboardController");
+
+const {
+  getCurrentPeriod,
+  getAcademicPeriods,
+  createAcademicPeriod,
+  setCurrentPeriod,
+  getOfficialsBoard,
+  appointOfficial,
+} = require("../coordinator/academicPeriodController");
 
 const router = express.Router();
 const multer = require("multer");
@@ -81,5 +90,15 @@ router.put("/users/deactivate/:id", deactivateUser);
 router.delete("/users/:id", deleteUser);
 
 router.get("/dashboard", getDashboard);
+
+// Academic Period Management Routes
+router.get("/academic-periods/current", getCurrentPeriod);
+router.get("/academic-periods", getAcademicPeriods);
+router.post("/academic-periods", createAcademicPeriod);
+router.put("/academic-periods/:id/set-current", setCurrentPeriod);
+
+// Officials Board Routes
+router.get("/officials-board", getOfficialsBoard);
+router.post("/officials-board/appoint", appointOfficial);
 
 module.exports = router;

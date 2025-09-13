@@ -11,10 +11,16 @@ const {
   getRandomSection,
   isRoomAvailable,
   calculateDurationInTimeFormat,
+  getCurrentAcademicPeriod,
+  getAcademicPeriodFilter,
+  ensureAcademicPeriodId,
 } = require("../utils.js");
 
 const getLoad = async (req, res) => {
   try {
+    // Get current academic period filter
+    const periodFilter = await getAcademicPeriodFilter(supabase);
+
     // Get all faculty profiles first
     const { data: facultyData, error: facultyError } = await supabase
       .from("teacher_profile")
@@ -43,10 +49,8 @@ const getLoad = async (req, res) => {
 
     if (facultyError) throw facultyError;
 
-    // Get all schedules separately
-    const { data: scheduleData, error: scheduleError } = await supabase.from(
-      "teacher_schedules"
-    ).select(`
+    // Get schedules for current academic period only
+    let scheduleQuery = supabase.from("teacher_schedules").select(`
         id,
         teacher_id,
         days,
@@ -56,6 +60,7 @@ const getLoad = async (req, res) => {
         total_duration,
         semester,
         school_year,
+        academic_period_id,
         created_at,
         subjects:teacher_schedules_subject_id_fkey (
           id, subject_code, subject, total_hours, units, semester, school_year
@@ -67,6 +72,20 @@ const getLoad = async (req, res) => {
           id, room_id, room_title, room_desc, status, floor
         )
       `);
+
+    // Apply period filter
+    if (periodFilter.academic_period_id) {
+      scheduleQuery = scheduleQuery.eq(
+        "academic_period_id",
+        periodFilter.academic_period_id
+      );
+    } else {
+      scheduleQuery = scheduleQuery
+        .eq("semester", periodFilter.semester)
+        .eq("school_year", periodFilter.school_year);
+    }
+
+    const { data: scheduleData, error: scheduleError } = await scheduleQuery;
 
     if (scheduleError) throw scheduleError;
 
@@ -201,6 +220,20 @@ const addSubject = async (req, res) => {
       school_year,
     } = req.body;
 
+    // Ensure academic period data is included
+    const scheduleData = await ensureAcademicPeriodId(supabase, {
+      subject_id,
+      teacher_id,
+      section_id,
+      room_id,
+      days,
+      start_time,
+      end_time,
+      total_count,
+      semester,
+      school_year,
+    });
+
     // Get teacher + min_load from position
     const { data: teacherData, error: teacherError } = await supabase
       .from("teacher_profile")
@@ -291,20 +324,12 @@ const addSubject = async (req, res) => {
     // Calculate total duration (if you have this helper)
     const total_duration = calculateDurationInTimeFormat(start_time, end_time);
 
-    // Insert subject
+    // Insert subject using scheduleData (includes academic_period_id if available)
     const { data, error } = await supabase
       .from("teacher_schedules")
       .insert({
-        subject_id,
-        teacher_id,
-        section_id,
-        room_id,
+        ...scheduleData,
         days: abbrevDays,
-        start_time,
-        end_time,
-        total_count,
-        semester,
-        school_year,
         total_duration,
       })
       .select();
