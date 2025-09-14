@@ -1,5 +1,6 @@
 const supabase = require("../supabase.js");
 const getLoadQuery = require("../queries/coordinator").getLoadQuery;
+const { sendScheduleConfirmationEmails } = require("./emailController");
 const {
   parseAvailableDays,
   toMinutes,
@@ -638,7 +639,8 @@ const runAutoSchedule = async (req, res) => {
 
     const bookSection = (sectionId, day, start, end) => {
       if (!sectionBookings[sectionId]) sectionBookings[sectionId] = {};
-      if (!sectionBookings[sectionId][day]) sectionBookings[sectionId][day] = [];
+      if (!sectionBookings[sectionId][day])
+        sectionBookings[sectionId][day] = [];
       sectionBookings[sectionId][day].push({ start, end });
     };
 
@@ -849,7 +851,7 @@ const runAutoSchedule = async (req, res) => {
                   room.type.trim().toLowerCase() ===
                     blockHours.type.trim().toLowerCase() &&
                   isRoomFree(room.id, day, startTime, endTime) &&
-                  isInstructorFree(instructor.id, day, startTime, endTime) && 
+                  isInstructorFree(instructor.id, day, startTime, endTime) &&
                   isSectionFree(section.id, day, startTime, endTime)
               );
 
@@ -986,6 +988,14 @@ const runAutoSchedule = async (req, res) => {
           : "Auto-scheduled classes for all faculty",
       by: req.body.user_id ?? null,
     });
+
+    // Send email notifications to affected teachers
+    try {
+      await sendScheduleConfirmationEmails(filteredTeachers, schedule, loadMap);
+    } catch (emailError) {
+      console.error("Failed to send schedule confirmation emails:", emailError);
+      // Don't fail the entire operation if emails fail
+    }
 
     return res.status(200).json({
       title: "Success",

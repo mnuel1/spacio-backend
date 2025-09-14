@@ -200,7 +200,6 @@ const generateAvailabilityEmailTemplate = ({
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Teaching Availability Required</title>
       <style>
         * {
           margin: 0;
@@ -563,7 +562,240 @@ const testEmailService = async (req, res) => {
   }
 };
 
+// Send schedule confirmation emails to teachers after auto-scheduling
+const sendScheduleConfirmationEmails = async (teachers, schedule, loadMap) => {
+  try {
+    console.log("📧 Sending schedule confirmation emails...");
+
+    if (!resend || !resend.emails || typeof resend.emails.send !== "function") {
+      throw new Error("Resend API is not properly initialized");
+    }
+
+    const emailPromises = teachers.map(async (teacher) => {
+      // Try different name fields - the teacher object might have different structure
+      const teacherName =
+        teacher.name || teacher.user_profile?.name || `Teacher ${teacher.id}`;
+      const teacherSchedule = schedule[teacherName] || [];
+      const newLoad = loadMap[teacherName] || 0;
+
+      // Get teacher email from user profile
+      const teacherEmail = teacher.user_profile?.email;
+      if (!teacherEmail) {
+        console.warn(`No email found for teacher: ${teacherName}`);
+        return { status: "skipped", teacher: teacherName, reason: "No email" };
+      }
+
+      // Debug teacher data
+      console.log(`Teacher object:`, {
+        id: teacher.id,
+        name: teacher.name,
+        profileName: teacher.user_profile?.name,
+        finalName: teacherName,
+        email: teacherEmail,
+      });
+
+      const emailHtml = generateScheduleConfirmationTemplate({
+        teacherName,
+        teacherSchedule,
+        newLoad,
+        maxLoad: teacher.maxLoad || 0,
+      });
+
+      return resend.emails.send({
+        from: "Spacio Academic System <noreply@icschedule.com>",
+        to: [teacherEmail],
+        subject: "Schedule Update: Your New Teaching Assignment",
+        html: emailHtml,
+      });
+    });
+
+    const results = await Promise.allSettled(emailPromises);
+
+    // Count successful and failed emails
+    const successful = results.filter(
+      (result) => result.status === "fulfilled"
+    ).length;
+    const failed = results.filter(
+      (result) => result.status === "rejected"
+    ).length;
+
+    console.log(`📊 Email results: ${successful} sent, ${failed} failed`);
+
+    return { successful, failed, total: teachers.length };
+  } catch (error) {
+    console.error("Error sending schedule confirmation emails:", error);
+    throw error;
+  }
+};
+
+// Generate HTML template for schedule confirmation emails
+const generateScheduleConfirmationTemplate = ({
+  teacherName,
+  teacherSchedule,
+  newLoad,
+  maxLoad,
+}) => {
+  const currentDate = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  // Group schedule by day
+  const scheduleByDay = {};
+  teacherSchedule.forEach((cls) => {
+    if (!scheduleByDay[cls.day]) {
+      scheduleByDay[cls.day] = [];
+    }
+    scheduleByDay[cls.day].push(cls);
+  });
+
+  // Sort days
+  const dayOrder = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+  const sortedDays = dayOrder.filter((day) => scheduleByDay[day]);
+
+  const scheduleHTML = sortedDays
+    .map((day) => {
+      const dayClasses = scheduleByDay[day].sort((a, b) =>
+        a.start.localeCompare(b.start)
+      );
+      const classesHTML = dayClasses
+        .map(
+          (cls) => `
+      <div style="background: #f8fafc; border-radius: 6px; padding: 12px; margin-bottom: 8px; border-left: 4px solid #3b82f6;">
+        <div style="font-weight: 600; color: #1f2937; margin-bottom: 4px;">${cls.subject} (${cls.subject_code})</div>
+        <div style="font-size: 14px; color: #6b7280; margin-bottom: 2px;">Section: ${cls.section} • Room: ${cls.room_title}</div>
+        <div style="font-size: 14px; color: #6b7280;">Time: ${cls.start} - ${cls.end} • Units: ${cls.units}</div>
+      </div>
+    `
+        )
+        .join("");
+
+      return `
+      <div style="margin-bottom: 24px;">
+        <h3 style="color: #1f2937; font-size: 18px; margin-bottom: 12px; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px;">${day}</h3>
+        ${classesHTML}
+      </div>
+    `;
+    })
+    .join("");
+
+  const loadPercentage =
+    maxLoad > 0 ? Math.round((newLoad / maxLoad) * 100) : 0;
+  const loadColor =
+    loadPercentage > 90
+      ? "#dc2626"
+      : loadPercentage > 75
+      ? "#d97706"
+      : "#059669";
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #374151; background-color: #f9fafb; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #059669 0%, #047857 100%); padding: 32px 24px; text-align: center; }
+        .header-icon { width: 48px; height: 48px; background-color: rgba(255, 255, 255, 0.2); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; font-size: 24px; font-weight: bold; color: white; }
+        .header h1 { color: #ffffff; font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+        .header p { color: rgba(255, 255, 255, 0.9); font-size: 16px; }
+        .content { padding: 32px 24px; }
+        .alert-box { background-color: #dcfce7; border: 1px solid #16a34a; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+        .alert-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .alert-title { font-weight: 600; color: #15803d; font-size: 16px; }
+        .alert-text { color: #166534; font-size: 14px; }
+        .load-info { background-color: #f3f4f6; border-radius: 8px; padding: 20px; margin: 24px 0; }
+        .load-bar { width: 100%; height: 20px; background-color: #e5e7eb; border-radius: 10px; overflow: hidden; margin-top: 8px; }
+        .load-fill { height: 100%; background-color: ${loadColor}; transition: width 0.3s ease; }
+        .footer { background-color: #f9fafb; padding: 24px; border-top: 1px solid #e5e7eb; text-align: center; }
+        .footer-text { color: #6b7280; font-size: 14px; margin-bottom: 8px; }
+        @media (max-width: 600px) { .container { margin: 0 16px; } }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <div class="header-icon">
+            ✓
+          </div>
+          <h1>Schedule Updated</h1>
+          <p>Your Teaching Assignment</p>
+        </div>
+
+        <div class="content">
+          <div class="alert-box">
+            <div class="alert-header">
+              <span style="color: #15803d; font-size: 18px; font-weight: bold;">✓</span>
+              <span class="alert-title">Schedule Successfully Generated</span>
+            </div>
+            <p class="alert-text">
+              Your teaching schedule has been automatically updated. Please review your new assignments below.
+            </p>
+          </div>
+
+          <p>Dear <strong>${teacherName}</strong>,</p>
+          
+          <p>Your teaching schedule has been successfully generated through our automated scheduling system. Below are your new class assignments and updated teaching load.</p>
+
+          <div class="load-info">
+            <h3 style="color: #1f2937; font-size: 18px; margin-bottom: 12px;">Teaching Load Summary</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 14px; color: #6b7280;">Current Load:</span>
+              <span style="font-weight: 600; color: #1f2937;">${newLoad} / ${maxLoad} units</span>
+            </div>
+            <div class="load-bar">
+              <div class="load-fill" style="width: ${loadPercentage}%;"></div>
+            </div>
+            <div style="text-align: center; margin-top: 8px; font-size: 14px; color: ${loadColor}; font-weight: 600;">
+              ${loadPercentage}% of maximum load
+            </div>
+          </div>
+
+          <h3 style="color: #1f2937; font-size: 20px; margin-bottom: 16px;">Your Weekly Schedule</h3>
+          
+          ${
+            teacherSchedule.length > 0
+              ? scheduleHTML
+              : '<p style="color: #6b7280; font-style: italic;">No classes assigned at this time.</p>'
+          }
+
+          <div style="background-color: #f8fafc; border-radius: 8px; padding: 24px; margin: 24px 0;">
+            <h4 style="color: #1f2937; font-size: 16px; margin-bottom: 12px;">What's Next?</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #4b5563;">
+              <li style="margin-bottom: 8px;">Review your schedule for any conflicts</li>
+              <li style="margin-bottom: 8px;">Log in to the system to access detailed class information</li>
+              <li style="margin-bottom: 8px;">Contact the Academic Coordinator if you have concerns</li>
+              <li>Prepare your course materials for the upcoming classes</li>
+            </ul>
+          </div>
+
+          <p>If you have any questions about your new schedule or need to report any conflicts, please contact the Academic Coordination Office immediately.</p>
+        </div>
+
+        <div class="footer">
+          <p class="footer-text">
+            This email was sent on ${currentDate} by the Academic Coordination Office
+          </p>
+          <p style="color: #3b82f6; font-size: 14px;">
+            Spacio Academic Management System
+          </p>
+          <p style="font-size: 12px; color: #9ca3af; margin-top: 16px;">
+            If you have questions about your schedule, please contact the Academic Coordination Office.
+          </p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
+
 module.exports = {
   sendTeacherAvailabilityNotification,
   testEmailService,
+  sendScheduleConfirmationEmails,
 };
