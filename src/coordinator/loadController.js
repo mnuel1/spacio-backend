@@ -211,11 +211,13 @@ const addSubject = async (req, res) => {
       .from("teacher_profile")
       .select(
         `
+        id,
         current_load,
+        avail_days,
+        pref_time,
+        specializations,
         position_id,
-        positions!inner (
-          min_load
-        )
+        positions!inner ( min_load )
       `
       )
       .eq("id", teacher_id)
@@ -232,7 +234,7 @@ const addSubject = async (req, res) => {
     // Get subject units
     const { data: subjectData, error: subjectError } = await supabase
       .from("subjects")
-      .select("units")
+      .select("units, specialization")
       .eq("id", subject_id)
       .single();
 
@@ -246,7 +248,7 @@ const addSubject = async (req, res) => {
 
     const { current_load, positions } = teacherData;
     const min_load = positions?.min_load || 0;
-    const { units } = subjectData;
+    const { units, specialization  } = subjectData;
 
     // Check load limit
     if (current_load + units > min_load + 12) {
@@ -260,20 +262,52 @@ const addSubject = async (req, res) => {
 
     const abbrevDays = abbreviateDays(days);
 
+     if (specializations) {
+      const specList = specializations.split(",").map((s) => s.trim().toLowerCase());
+      if (!specList.includes(specialization.trim().toLowerCase())) {
+        return res.status(400).json({
+          title: "Failed",
+          message: `Teacher is not specialized to teach this subject (${specialization}).`,
+        });
+      }
+    }
+
+    // ===== Check teacher availability (days) =====
+    if (avail_days) {
+      const availList = avail_days.split(",").map((d) => d.trim());
+      const invalidDay = days.find((d) => !availList.includes(d));
+      if (invalidDay) {
+        return res.status(400).json({
+          title: "Failed",
+          message: `Teacher is not available on ${invalidDay}.`,
+        });
+      }
+    }
+
+    // ===== Check teacher availability (time) =====
+    if (pref_time) {
+      const [prefStart, prefEnd] = pref_time.split("-").map((t) => t.trim());
+      if (start_time < prefStart || end_time > prefEnd) {
+        return res.status(400).json({
+          title: "Failed",
+          message: `Time must be within teacher's preferred time window (${prefStart}-${prefEnd}).`,
+        });
+      }
+    }
+
     // ===== Check 1: Room conflict =====
     const { data: roomConflict, error: roomError } = await supabase
       .from("teacher_schedules")
       .select("id")
       .eq("room_id", room_id)
       .eq("days", abbrevDays)
-      .eq("start_time", start_time)
-      .eq("end_time", end_time);
+      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
 
     if (roomError) throw roomError;
     if (roomConflict.length > 0) {
       return res.status(400).json({
         title: "Failed",
-        message: "Room is already booked at this time on this day.",
+        message: "Room is already booked at this time.",
       });
     }
 
@@ -282,11 +316,42 @@ const addSubject = async (req, res) => {
       .from("teacher_schedules")
       .select("id")
       .eq("section_id", section_id)
-      .eq("subject_id", subject_id)
-      .eq("days", abbrevDays);
+      .eq("days", abbrevDays)
+      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
 
     if (sectionError) throw sectionError;
     if (sectionConflict.length > 0) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Section already has another subject scheduled at this time.",
+      });
+    }
+
+    // ===== Check 3: Teacher conflict (time overlap) =====
+    const { data: teacherConflict, error: teacherConflictError } = await supabase
+      .from("teacher_schedules")
+      .select("id")
+      .eq("teacher_id", teacher_id)
+      .eq("days", abbrevDays)
+      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
+
+    if (teacherConflictError) throw teacherConflictError;
+    if (teacherConflict.length > 0) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Teacher already has another class scheduled at this time.",
+      });
+    }
+    // ===== Check 4: Same section + subject same day =====
+    const { data: duplicateSubject, error: dupError } = await supabase
+      .from("teacher_schedules")
+      .select("id")
+      .eq("section_id", section_id)
+      .eq("subject_id", subject_id)
+      .eq("days", abbrevDays);
+
+    if (dupError) throw dupError;
+    if (duplicateSubject.length > 0) {
       return res.status(400).json({
         title: "Failed",
         message: "This section already has this subject on the same day.",
