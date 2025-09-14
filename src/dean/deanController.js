@@ -20,7 +20,7 @@ const recordLog = async (body) => {
         id,
         activity,
         created_at,
-        user_profile:activity_logs_by_fkey (
+        user_profile:by (
           id,
           name,
           email,
@@ -37,7 +37,6 @@ const recordLog = async (body) => {
       message: "Activity log created",
       data,
     });
-
   } catch (error) {
     console.error("Error", error.message);
     return res.status(500).json({
@@ -46,7 +45,7 @@ const recordLog = async (body) => {
       data: null,
     });
   }
-}
+};
 
 const getLogs = async (req, res) => {
   try {
@@ -57,7 +56,7 @@ const getLogs = async (req, res) => {
         id,
         activity,
         created_at,
-        user_profile:activity_logs_by_fkey (
+        user_profile:by (
           id,
           name,
           email,
@@ -131,7 +130,8 @@ const getSchedule = async (req, res) => {
       };
 
       // Expand compact day string ("MWF") back to array
-      const daysExpanded = row.days.match(/Th|[MTWF]/g)?.map((d) => dayMap[d]) || [];
+      const daysExpanded =
+        row.days.match(/Th|[MTWF]/g)?.map((d) => dayMap[d]) || [];
 
       daysExpanded.forEach((day) => {
         schedule[teacherName].push({
@@ -147,13 +147,12 @@ const getSchedule = async (req, res) => {
           units: row.total_duration, // or derive from subjects table if needed
         });
       });
-     
     });
 
     return res.status(200).json({
       title: "Success",
       message: "Schedules fetched",
-      data: schedule ,
+      data: schedule,
     });
   } catch (error) {
     console.error("Error", error.message);
@@ -163,11 +162,10 @@ const getSchedule = async (req, res) => {
       data: null,
     });
   }
-}
-
+};
 
 module.exports = {
   recordLog,
   getLogs,
-  getSchedule
+  getSchedule,
 };

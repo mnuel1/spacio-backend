@@ -14,7 +14,7 @@ const {
   getCurrentAcademicPeriod,
   getAcademicPeriodFilter,
   ensureAcademicPeriodId,
-  getSy
+  getSy,
 } = require("../utils.js");
 
 const getLoad = async (req, res) => {
@@ -323,7 +323,7 @@ const addSubject = async (req, res) => {
 
     await supabase.from("activity_logs").insert({
       activity: `Added subject ${subject_id} to section ${section_id}, teacher ${teacher_id}, room ${room_id}, ${abbrevDays} ${start_time}-${end_time}`,
-      by: req.body.user_id ?? null
+      by: req.body.user_id ?? null,
     });
     return res.status(201).json({
       title: "Success",
@@ -355,7 +355,7 @@ const removeSubject = async (req, res) => {
 
     await supabase.from("activity_logs").insert({
       activity: `Removed subject assignment (schedule ID: ${id})`,
-      by: req.body.user_id ?? null
+      by: req.body.user_id ?? null,
     });
 
     return res.status(200).json({
@@ -393,8 +393,10 @@ const reassignSubject = async (req, res) => {
     if (error) throw error;
 
     await supabase.from("activity_logs").insert({
-      activity: `Reassigned subject (schedule ID: ${id}) → ${JSON.stringify(updateFields)}`,
-      by: req.body.user_id ?? null
+      activity: `Reassigned subject (schedule ID: ${id}) → ${JSON.stringify(
+        updateFields
+      )}`,
+      by: req.body.user_id ?? null,
     });
 
     return res.status(200).json({
@@ -548,7 +550,7 @@ const runAutoSchedule = async (req, res) => {
     const unassigned = [];
     const subjectTeacherMap = {};
     const sectionSubjectDays = {};
-    
+
     // Initialize room bookings with existing schedules
     existingSchedules.forEach((sched) => {
       if (!roomBookings[sched.room_id]) roomBookings[sched.room_id] = {};
@@ -579,8 +581,7 @@ const runAutoSchedule = async (req, res) => {
       });
     });
 
-    const instructors = filteredTeachers  
-    .map((teacher) => {
+    const instructors = filteredTeachers.map((teacher) => {
       const fullName = teacher.user_profile?.name || "No name";
       const maxLoad = teacher.positions?.min_load;
       const availDays = parseAvailableDays(teacher.avail_days);
@@ -591,8 +592,10 @@ const runAutoSchedule = async (req, res) => {
         timePref = { start, end };
       }
       const specializations = teacher.specializations
-      ? teacher.specializations.split(",").map((s) => s.replace(/"/g, "").trim())
-      : [];
+        ? teacher.specializations
+            .split(",")
+            .map((s) => s.replace(/"/g, "").trim())
+        : [];
 
       return {
         id: teacher.id,
@@ -603,7 +606,7 @@ const runAutoSchedule = async (req, res) => {
           ? availDays
           : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
         timePref,
-        specializations 
+        specializations,
       };
     });
 
@@ -697,9 +700,9 @@ const runAutoSchedule = async (req, res) => {
       }
 
       return map;
-    }
+    };
     const subjectSectionMap = mapSubjectsToSections(sections, subjects);
-    
+
     for (const [key, group] of Object.entries(subjectSectionMap)) {
       const { sections, subjects } = group;
 
@@ -740,12 +743,17 @@ const runAutoSchedule = async (req, res) => {
               }
 
               // 1. Check load
-              if (loadMap[instructor.name] + subject.units > instructor.maxLoad) {
+              if (
+                loadMap[instructor.name] + subject.units >
+                instructor.maxLoad
+              ) {
                 continue;
               }
 
               // 2. Check specialization
-              if (!instructor.specializations.includes(subject.specialization)) {
+              if (
+                !instructor.specializations.includes(subject.specialization)
+              ) {
                 continue;
               }
 
@@ -764,7 +772,8 @@ const runAutoSchedule = async (req, res) => {
             }
 
             // lock assignment
-            if (!subjectTeacherMap[section.id]) subjectTeacherMap[section.id] = {};
+            if (!subjectTeacherMap[section.id])
+              subjectTeacherMap[section.id] = {};
             subjectTeacherMap[section.id][subject.subject_code] =
               chosenInstructor.id;
             assignedInstructorId = chosenInstructor.id;
@@ -786,14 +795,19 @@ const runAutoSchedule = async (req, res) => {
           for (const blockHours of timeBlocks) {
             let blockAssigned = false;
 
-            if (loadMap[instructor.name] + blockHours.hours > instructor.maxLoad) {
+            if (
+              loadMap[instructor.name] + blockHours.hours >
+              instructor.maxLoad
+            ) {
               failReason = `Instructor ${instructor.name} exceeds max load with ${blockHours.hours}h`;
               allBlocksAssigned = false;
               break;
             }
 
             for (const day of instructor.dayPref) {
-              if (sectionSubjectDays[section.id][subject.subject_code].has(day)) {
+              if (
+                sectionSubjectDays[section.id][subject.subject_code].has(day)
+              ) {
                 failReason = `Section ${section.name} already has ${subject.subject_code} on ${day}`;
                 continue;
               }
@@ -812,7 +826,7 @@ const runAutoSchedule = async (req, res) => {
               // const randomStartMin = roundToSlot(earliestStart, 60);
               const randomStartMin = getRandomInt(earliestStart, latestStart);
               const randomEndMin = randomStartMin + durationMin;
-              const startTime = toHHMM(randomStartMin);                            
+              const startTime = toHHMM(randomStartMin);
               const endTime = toHHMM(randomEndMin);
 
               const availableRoom = rooms.find(
@@ -834,7 +848,7 @@ const runAutoSchedule = async (req, res) => {
                   end: endTime,
                   room_title: availableRoom.room_title,
                   room_id: availableRoom.room_id,
-                  units: blockHours.hours,                  
+                  units: blockHours.hours,
                 });
 
                 loadMap[instructor.name] += blockHours.hours;
@@ -867,7 +881,7 @@ const runAutoSchedule = async (req, res) => {
         }
       }
     }
-   
+
     // Group schedules for database insertion
     const groupedSchedules = {};
 
@@ -884,7 +898,7 @@ const runAutoSchedule = async (req, res) => {
         const section = sections.find((s) => s.name === cls.section);
 
         const key = `${teacher.id}-${subject?.id}-${section?.id}-${room?.id}-${cls.start}-${cls.end}`;
-        
+
         if (!groupedSchedules[key]) {
           groupedSchedules[key] = {
             teacher_id: teacher.id,
@@ -895,7 +909,7 @@ const runAutoSchedule = async (req, res) => {
             end_time: cls.end,
             days: [],
             semester: subject?.semester || null,
-            school_year: subject?.school_year || null,            
+            school_year: subject?.school_year || null,
             total_count: section.total_count,
             total_duration: calculateDurationInTimeFormat(cls.start, cls.end),
           };
@@ -930,7 +944,7 @@ const runAutoSchedule = async (req, res) => {
 
     const insertResults = await Promise.all(insertPromises);
     const insertErrors = insertResults.filter((r) => r.error);
-    
+
     // Only update loads for selected faculty
     const updatePromises = Object.entries(loadMap).map(
       async ([teacherName, load]) => {
@@ -947,12 +961,15 @@ const runAutoSchedule = async (req, res) => {
     await Promise.all(updatePromises);
 
     await supabase.from("activity_logs").insert({
-      activity: selectedFacultyIds && selectedFacultyIds.length > 0
-        ? `Auto-scheduled classes for selected faculty: ${selectedFacultyIds.join(", ")}`
-        : "Auto-scheduled classes for all faculty",
-      by: req.body.user_id ?? null
+      activity:
+        selectedFacultyIds && selectedFacultyIds.length > 0
+          ? `Auto-scheduled classes for selected faculty: ${selectedFacultyIds.join(
+              ", "
+            )}`
+          : "Auto-scheduled classes for all faculty",
+      by: req.body.user_id ?? null,
     });
-    
+
     return res.status(200).json({
       title: "Success",
       message: "Schedule generated",
@@ -1232,8 +1249,7 @@ const checkTeachersAvailability = async (req, res) => {
 
 const sectionSchedule = async (req, res) => {
   try {
-    const { data: rows, error } = await supabase
-      .from("teacher_schedules")
+    const { data: rows, error } = await supabase.from("teacher_schedules")
       .select(`
         id,
         teacher_id,
@@ -1269,8 +1285,15 @@ const sectionSchedule = async (req, res) => {
       }
 
       // Map abbreviated days back to full names
-      const dayMap = { M: "Monday", T: "Tuesday", W: "Wednesday", Th: "Thursday", F: "Friday" };
-      const daysExpanded = row.days.match(/Th|[MTWF]/g)?.map((d) => dayMap[d]) || [];
+      const dayMap = {
+        M: "Monday",
+        T: "Tuesday",
+        W: "Wednesday",
+        Th: "Thursday",
+        F: "Friday",
+      };
+      const daysExpanded =
+        row.days.match(/Th|[MTWF]/g)?.map((d) => dayMap[d]) || [];
 
       daysExpanded.forEach((day) => {
         scheduleBySection[sectionName].push({
@@ -1336,5 +1359,5 @@ module.exports = {
   getConflicts,
   updateConflict,
   checkTeachersAvailability,
-  sectionSchedule
+  sectionSchedule,
 };
