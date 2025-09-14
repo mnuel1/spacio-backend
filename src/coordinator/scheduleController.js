@@ -25,34 +25,6 @@ const transformSchedule = (teacher) => {
     return (endTime - startTime) / 60000; // in minutes
   };
 
-  // return {
-  //   id: schedule.id, // e.g., SCH001
-  //   subjectId: schedule?.subjects?.id || "None",
-  //   facultyId: schedule.teacher_profile.id,
-  //   roomId: schedule.room.id,
-  //   timeSlot: {
-  //     id: schedule.id,
-  //     day: schedule.days || "",
-  //     startTime: schedule.start_time ? schedule.start_time.slice(0, 5) : "",
-  //     endTime: schedule.end_time ? schedule.end_time.slice(0, 5) : "",
-  //     duration: getDuration(schedule.start_time, schedule.end_time),
-  //   },
-  //   section: schedule.section?.name || "",
-  //   enrollmentCount: schedule.total_count || 0,
-  //   academicYear: schedule.school_year || "",
-  //   semester: schedule.semester || "",
-  //   status: "Scheduled", // static since you didn't provide dynamic status
-  //   createdAt: schedule.created_at ? new Date(schedule.created_at) : null,
-  //   updatedAt: schedule.updated_at ? new Date(schedule.updated_at) : null,
-  //   createdBy: schedule.user_profile?.name || "",
-  //   extra: {
-  //     teacher_profile: schedule.teacher_profile,
-  //     subjects: schedule.subjects,
-  //     room: schedule.room,
-  //     user_profile: schedule.user_profile,
-  //   },
-  // };
-
   // If teacher has schedules, map them
   const schedules = (teacher.teacher_schedules || []).map((schedule) => ({
     id: schedule.id,

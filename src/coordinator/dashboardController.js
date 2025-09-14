@@ -309,7 +309,7 @@ const campusStatus = async () => {
 
 const facultySchedule = async () => {
   const { data, error } = await supabase
-    .from('teacher_schedules')
+    .from('teacher_profile')
     .select(getSchedulesQuery);
 
   if (error) {
@@ -319,13 +319,12 @@ const facultySchedule = async () => {
 
   const facultyMap = new Map();
 
-  data.forEach((schedule) => {
-    const teacher = schedule.teacher_profile;
+  data.forEach((teacher) => {    
     if (teacher && teacher.user_profile) {
       facultyMap.set(teacher.id, {
         id: teacher.id,
-        name: teacher.user_profile.name,
-        department: teacher.departments?.name || 'Unknown',
+        name: teacher.user_profile.name || "No name",
+        department: teacher.departments?.name || 'Not assigned to any department',
       });
     }
   });
@@ -336,25 +335,31 @@ const facultySchedule = async () => {
   ];
 
   const schedules = {};
-
-  data.forEach((schedule) => {
-    const teacherId = schedule.teacher_profile?.id;
+  
+  data.forEach((teacher) => {
+    const teacherId = teacher.id;
     if (!teacherId) return;
 
     if (!schedules[teacherId]) {
       schedules[teacherId] = [];
     }
+    
+    if (Array.isArray(teacher.teacher_schedules)) {
+      teacher.teacher_schedules.forEach((sched) => {
+        schedules[teacherId].push({
+          subject: sched.subjects?.subject || 'No subject',
+          startTime: sched.start_time ? formatTime(sched.start_time) : null,
+          endTime: sched.end_time ? formatTime(sched.end_time) : null,
+          room: sched.room?.room_title || 'TBD',
+          students: sched.total_count || 0,
+          type: 'lecture',
+          color: 'bg-blue-500',
+        });
+      });
+    }
 
-    schedules[teacherId].push({
-      subject: schedule.subjects?.subject || 'Unknown',
-      startTime: formatTime(schedule.start_time),
-      endTime: formatTime(schedule.end_time),
-      room: schedule.room?.room_title || 'TBD',
-      students: schedule.total_count || 0,
-      type: 'lecture',
-      color: 'bg-blue-500',
-    });
   });
+
 
   return {
     faculty: Array.from(facultyMap.values()),
