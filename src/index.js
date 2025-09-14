@@ -2,12 +2,12 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 
-const studentRouter = require("./src/student/route");
-const facultyRouter = require("./src/faculty/route");
-const coordinatorRouter = require("./src/coordinator/route");
-const deanRouter = require("./src/dean/route");
-const mmDataRouter = require("./src/mmdata/route");
-const accountRouter = require("./src/account/route");
+const studentRouter = require("./student/route");
+const facultyRouter = require("./faculty/route");
+const coordinatorRouter = require("./coordinator/route");
+const deanRouter = require("./dean/route");
+const mmDataRouter = require("./mmdata/route");
+const accountRouter = require("./account/route");
 dotenv.config();
 
 const app = express();
