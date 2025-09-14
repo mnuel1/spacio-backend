@@ -2,12 +2,13 @@ const { supabase } = require("../supabase");
 
 // Import Resend - try multiple methods to ensure compatibility
 let resend = null;
+let RESEND_API_KEY = process.env.RESEND_API_KEY;
 
 const initializeResend = () => {
   try {
     // Method 1: Standard destructured import
     const { Resend } = require("resend");
-    resend = new Resend("re_5Kr8jtqy_Gd6n9HE83oAK7Tj9jA1BQfHn");
+    resend = new Resend(RESEND_API_KEY);
     console.log("✅ Resend initialized with destructured import");
     return true;
   } catch (error1) {
@@ -16,7 +17,7 @@ const initializeResend = () => {
     try {
       // Method 2: Default import
       const Resend = require("resend").default;
-      resend = new Resend("re_5Kr8jtqy_Gd6n9HE83oAK7Tj9jA1BQfHn");
+      resend = new Resend(RESEND_API_KEY);
       console.log("✅ Resend initialized with default import");
       return true;
     } catch (error2) {
@@ -25,7 +26,7 @@ const initializeResend = () => {
       try {
         // Method 3: Direct require
         const ResendClass = require("resend");
-        resend = new ResendClass("re_5Kr8jtqy_Gd6n9HE83oAK7Tj9jA1BQfHn");
+        resend = new ResendClass(RESEND_API_KEY);
         console.log("✅ Resend initialized with direct require");
         return true;
       } catch (error3) {
@@ -39,11 +40,7 @@ const initializeResend = () => {
 // Initialize Resend on module load
 const resendInitialized = initializeResend();
 
-if (resendInitialized && resend) {
-  console.log("Resend instance type:", typeof resend);
-  console.log("Resend emails exists:", !!resend?.emails);
-  console.log("Resend emails.send type:", typeof resend?.emails?.send);
-}
+// Resend initialized successfully
 
 // Test function to verify Resend is working
 const testResendConnection = async () => {
@@ -51,7 +48,7 @@ const testResendConnection = async () => {
     if (!resend || !resend.emails || typeof resend.emails.send !== "function") {
       throw new Error("Resend API is not properly initialized");
     }
-    console.log("✅ Resend connection test passed");
+    // Resend connection verified
     return true;
   } catch (error) {
     console.error("❌ Resend connection test failed:", error);
@@ -61,10 +58,6 @@ const testResendConnection = async () => {
 
 const sendTeacherAvailabilityNotification = async (req, res) => {
   try {
-    console.log("📧 Email notification request received");
-    console.log("Request body:", JSON.stringify(req.body, null, 2));
-    console.log("User context:", req.user ? "Available" : "Not available");
-
     // Test Resend connection first
     const isResendReady = await testResendConnection();
     if (!isResendReady) {
@@ -112,9 +105,6 @@ const sendTeacherAvailabilityNotification = async (req, res) => {
           };
         }
       } else {
-        console.log(
-          "No user authentication context, using default coordinator"
-        );
         coordinator = {
           name: "Academic Coordinator",
           email: "coordinator@icschedule.com",
@@ -131,8 +121,6 @@ const sendTeacherAvailabilityNotification = async (req, res) => {
         teacherInfo: teacher,
       });
 
-      console.log(`📧 Preparing email for: ${teacher.email}`);
-
       if (
         !resend ||
         !resend.emails ||
@@ -141,21 +129,12 @@ const sendTeacherAvailabilityNotification = async (req, res) => {
         throw new Error("Resend API is not properly initialized");
       }
 
-      const emailData = {
+      return resend.emails.send({
         from: "Spacio Academic System <noreply@icschedule.com>",
         to: [teacher.email],
         subject: "Action Required: Please Set Your Teaching Availability",
         html: emailHtml,
-      };
-
-      console.log(`📤 Sending email with data:`, {
-        from: emailData.from,
-        to: emailData.to,
-        subject: emailData.subject,
-        htmlLength: emailData.html.length,
       });
-
-      return resend.emails.send(emailData);
     });
 
     const results = await Promise.allSettled(emailPromises);
