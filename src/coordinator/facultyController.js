@@ -1,9 +1,7 @@
 const getFacultyQuery = require("../queries/coordinator.js").getFacultyQuery;
 const supabase = require("../supabase.js");
 const parseAvailableDays = require("../utils.js").parseAvailableDays;
-const {
-  getSy
-} = require("../utils.js")
+const { getSy } = require("../utils.js");
 
 const combineFullName = (firstName, middleName, lastName) => {
   return [firstName, middleName, lastName].filter(Boolean).join(" ");
@@ -29,8 +27,6 @@ const getFaculty = async (req, res) => {
       const specializations = profile.specializations
         ? profile.specializations.replace(/(^"|"$)/g, "").split('","')
         : [];
-
-      
 
       return {
         id: user.id,
@@ -130,7 +126,7 @@ const createFaculty = async (req, res) => {
       phone,
       department_id,
       position_id,
-      user_id
+      user_id,
     } = req.body;
 
     const fullName = combineFullName(firstName, middleName, lastName);
@@ -143,7 +139,6 @@ const createFaculty = async (req, res) => {
       await supabase.auth.admin.createUser({
         email: email,
         password: defaultPassword,
-        email_confirm: true, // Auto-confirm email
         user_metadata: {
           full_name: fullName,
           role: "Faculty",
@@ -181,9 +176,9 @@ const createFaculty = async (req, res) => {
       await supabase.auth.admin.deleteUser(authUserId);
       throw profileError;
     }
-    await supabase.from('activity_logs').insert({
+    await supabase.from("activity_logs").insert({
       activity: `Added new faculty: ${fullName} (Department ${department_id})`,
-      by: user_id ?? null
+      by: user_id ?? null,
     });
 
     return res.status(201).json({
@@ -455,7 +450,7 @@ const updateFaculty = async (req, res) => {
 
     await supabase.from("activity_logs").insert({
       activity: `Updated faculty: ${fullName} (ID: ${id}, Department: ${department_id}, Position: ${position_id})`,
-      by: req.body.user_id ?? null
+      by: req.body.user_id ?? null,
     });
     return res.status(200).json({
       title: "Success",
@@ -544,7 +539,7 @@ const deleteFaculty = async (req, res) => {
 
     await supabase.from("activity_logs").insert({
       activity: `Deleted faculty: ${userProfile.name} (ID: ${id})`,
-      by: req.body.user_id ?? null
+      by: req.body.user_id ?? null,
     });
 
     return res.status(200).json({

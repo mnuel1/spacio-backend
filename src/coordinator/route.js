@@ -10,7 +10,7 @@ const {
   updateFaculty,
   deleteFaculty,
   getFaculty,
-  checkFacultyDataIntegrity,  
+  checkFacultyDataIntegrity,
 } = require("../coordinator/facultyController");
 
 const {
@@ -49,6 +49,11 @@ const {
 } = require("../coordinator/academicPeriodController");
 
 const { getDashboard } = require("../coordinator/dashboardController");
+
+const {
+  sendTeacherAvailabilityNotification,
+  testEmailService,
+} = require("../coordinator/emailController");
 
 const router = express.Router();
 const multer = require("multer");
@@ -103,5 +108,11 @@ router.put("/academic-periods/:id/set-current", setCurrentPeriod);
 router.get("/officials-board", getOfficialsBoard);
 router.post("/officials-board/appoint", appointOfficial);
 
+// Email Notification Routes
+router.get("/notifications/test", testEmailService);
+router.post(
+  "/notifications/teachers/availability",
+  sendTeacherAvailabilityNotification
+);
 
 module.exports = router;
