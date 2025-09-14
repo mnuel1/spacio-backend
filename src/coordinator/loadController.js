@@ -550,6 +550,7 @@ const runAutoSchedule = async (req, res) => {
     const unassigned = [];
     const subjectTeacherMap = {};
     const sectionSubjectDays = {};
+    const sectionBookings = {};
 
     // Initialize room bookings with existing schedules
     existingSchedules.forEach((sched) => {
@@ -625,6 +626,20 @@ const runAutoSchedule = async (req, res) => {
       return !instructorBookings[instructorId][day].some(
         (b) => !(end <= b.start || start >= b.end)
       );
+    };
+
+    const isSectionFree = (sectionId, day, start, end) => {
+      if (!sectionBookings[sectionId]) sectionBookings[sectionId] = {};
+      if (!sectionBookings[sectionId][day]) return true;
+      return !sectionBookings[sectionId][day].some(
+        (b) => !(end <= b.start || start >= b.end)
+      );
+    };
+
+    const bookSection = (sectionId, day, start, end) => {
+      if (!sectionBookings[sectionId]) sectionBookings[sectionId] = {};
+      if (!sectionBookings[sectionId][day]) sectionBookings[sectionId][day] = [];
+      sectionBookings[sectionId][day].push({ start, end });
     };
 
     const bookRoom = (roomId, day, start, end) => {
@@ -834,7 +849,8 @@ const runAutoSchedule = async (req, res) => {
                   room.type.trim().toLowerCase() ===
                     blockHours.type.trim().toLowerCase() &&
                   isRoomFree(room.id, day, startTime, endTime) &&
-                  isInstructorFree(instructor.id, day, startTime, endTime)
+                  isInstructorFree(instructor.id, day, startTime, endTime) && 
+                  isSectionFree(section.id, day, startTime, endTime)
               );
 
               if (availableRoom) {
@@ -855,6 +871,7 @@ const runAutoSchedule = async (req, res) => {
                 dailySubjectCount[instructor.id][day]++;
                 bookRoom(availableRoom.id, day, startTime, endTime);
                 bookInstructor(instructor.id, day, startTime, endTime);
+                bookSection(section.id, day, startTime, endTime);
                 sectionSubjectDays[section.id][subject.subject_code].add(day);
 
                 blockAssigned = true;
