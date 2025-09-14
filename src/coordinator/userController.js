@@ -84,7 +84,7 @@ const deleteUser = async (req, res) => {
   }
 };
 
-const BYPASS_EMAIL_CONFIRMATION = true;
+const BYPASS_EMAIL_CONFIRMATION = false;
 
 function parseFile(filepath, mimetype) {
   if (mimetype === "text/csv" || filepath.endsWith(".csv")) {
