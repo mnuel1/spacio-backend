@@ -526,25 +526,25 @@ const reassignSubject = async (req, res) => {
       updateFields.days = abbreviateDays(updateFields.days);
     }
 
-    const { data, error } = await supabase
-      .from("teacher_schedules")
-      .update(updateFields)
-      .eq("id", id)
-      .select();
+    // const { data, error } = await supabase
+    //   .from("teacher_schedules")
+    //   .update(updateFields)
+    //   .eq("id", id)
+    //   .select();
 
-    if (error) throw error;
+    // if (error) throw error;
 
-    await supabase.from("activity_logs").insert({
-      activity: `Reassigned subject (schedule ID: ${id}) → ${JSON.stringify(
-        updateFields
-      )}`,
-      by: req.body.user_id ?? null,
-    });
+    // await supabase.from("activity_logs").insert({
+    //   activity: `Reassigned subject (schedule ID: ${id}) → ${JSON.stringify(
+    //     updateFields
+    //   )}`,
+    //   by: req.body.user_id ?? null,
+    // });
 
     return res.status(200).json({
       title: "Success",
       message: "Subject reassigned successfully.",
-      data: data[0],
+      data: {},
     });
   } catch (error) {
     console.error("Error reassigning subject:", error.message);
