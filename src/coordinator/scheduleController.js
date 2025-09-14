@@ -25,6 +25,8 @@ const transformSchedule = (teacher) => {
     return (endTime - startTime) / 60000; // in minutes
   };
 
+  console.log(teacher);
+  
   // return {
   //   id: schedule.id, // e.g., SCH001
   //   subjectId: schedule?.subjects?.id || "None",
@@ -88,6 +90,9 @@ const transformSchedule = (teacher) => {
     },
   }));
 
+  // console.log(schedules);
+  
+
   return {
     teacherId: teacher.id,
     name: teacher.user_profile?.name || "",
@@ -102,7 +107,7 @@ const transformSchedule = (teacher) => {
 const getSchedule = async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from("teacher_schedules")
+      .from("teacher_profile")
       .select(getSchedulesQuery);
 
     if (error) throw error;
