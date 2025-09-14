@@ -30,3 +30,4 @@ app.get("/", (req, res) => {
   res.send("Hello from Express with Supabase!");
 });
 
+module.exports = app;
