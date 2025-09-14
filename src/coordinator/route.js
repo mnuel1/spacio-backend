@@ -82,8 +82,6 @@ router.get("/teachers/availability/check", checkTeachersAvailability);
 router.post("/auto/schedule", runAutoSchedule);
 router.get("/section/schedule", sectionSchedule);
 
-const upload = multer({ dest: "uploads/" });
-
 // Store files in memory
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
