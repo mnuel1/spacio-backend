@@ -1,5 +1,6 @@
 const supabase = require("../supabase");
 const { getUsersQuery } = require("../queries/coordinator");
+const { sendWelcomeEmailWithPassword } = require("./emailController");
 
 const fs = require("fs");
 const Papa = require("papaparse");
@@ -84,8 +85,6 @@ const deleteUser = async (req, res) => {
   }
 };
 
-const BYPASS_EMAIL_CONFIRMATION = false;
-
 function parseFile(filepath, mimetype) {
   if (mimetype === "text/csv" || filepath.endsWith(".csv")) {
     const file = fs.readFileSync(filepath, "utf8");
@@ -132,25 +131,44 @@ const addUsersByFile = async (req, res) => {
     const results = [];
 
     for (const user of users) {
-      const { email, name, role, email_verified } = user;
+      const { email, name, role } = user;
 
       const pass = name.replace(/\s+/g, "").toUpperCase();
 
-      const { error } = await supabase.auth.admin.createUser({
+      const { data: authData, error } = await supabase.auth.signUp({
         email,
         password: pass,
-        email_confirm: BYPASS_EMAIL_CONFIRMATION,
-        user_metadata: {
-          name,
-          role,
-          email_verified: email_verified === "true" || email_verified === true,
+        options: {
+          data: {
+            name,
+            role,
+          },
         },
       });
-      // const error = 1
+
       if (error) {
         results.push({ email, success: false, error: error.message });
       } else {
         results.push({ email, success: true });
+
+        // Send welcome email with password
+        // Note: Since we're using signUp(), user will receive Supabase confirmation email
+        // We include a note about email verification in our welcome email
+        try {
+          await sendWelcomeEmailWithPassword(
+            email,
+            name,
+            pass,
+            role,
+            "VERIFICATION_REQUIRED"
+          );
+        } catch (emailError) {
+          console.error(
+            `❌ Failed to send welcome email to ${email}:`,
+            emailError.message
+          );
+          // Don't fail the user creation if email fails
+        }
       }
 
       await new Promise((res) => setTimeout(res, 300));

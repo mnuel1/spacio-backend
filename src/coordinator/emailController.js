@@ -130,7 +130,7 @@ const sendTeacherAvailabilityNotification = async (req, res) => {
       }
 
       return resend.emails.send({
-        from: "PhilSCA Academic System <noreply@icschedule.com>",
+        from: "PhilSCA Academic System <hello@icschedule.com>",
         to: [teacher.email],
         subject: "Action Required: Please Set Your Teaching Availability",
         html: emailHtml,
@@ -528,7 +528,7 @@ const testEmailService = async (req, res) => {
 
     // Try to send a simple test email
     const testEmail = {
-      from: "ICSchedule Academic System <noreply@icschedule.com>",
+      from: "PhilSCA Academic System <hello@icschedule.com>",
       to: ["kilisob202@kwifa.com"], // change to test email
       subject: "Test Email - Resend Integration",
       html: "<h1>Test Email</h1><p>This is a test email to verify Resend integration.</p>",
@@ -602,7 +602,7 @@ const sendScheduleConfirmationEmails = async (teachers, schedule, loadMap) => {
       });
 
       return resend.emails.send({
-        from: "PhilSCA Academic System <noreply@icschedule.com>",
+        from: "PhilSCA Academic System <hello@icschedule.com>",
         to: [teacherEmail],
         subject: "Schedule Update: Your New Teaching Assignment",
         html: emailHtml,
@@ -794,8 +794,225 @@ const generateScheduleConfirmationTemplate = ({
   `;
 };
 
+// Send welcome email with password to new users
+const sendWelcomeEmailWithPassword = async (
+  userEmail,
+  userName,
+  password,
+  userRole,
+  confirmationUrl = null
+) => {
+  try {
+    if (!resend || !resend.emails || typeof resend.emails.send !== "function") {
+      throw new Error("Resend API is not properly initialized");
+    }
+
+    const emailHtml = generateWelcomeEmailTemplate({
+      userName,
+      userEmail,
+      password,
+      userRole,
+      confirmationUrl,
+    });
+
+    const result = await resend.emails.send({
+      from: "PhilSCA Academic System <hello@icschedule.com>",
+      to: [userEmail],
+      subject: "Welcome to PhilSCA Academic System - Account Created",
+      html: emailHtml,
+    });
+
+    console.log(`✅ Welcome email sent to ${userEmail}`);
+    return result;
+  } catch (error) {
+    console.error("Error sending welcome email:", error);
+    throw error;
+  }
+};
+
+// Generate HTML template for welcome emails
+const generateWelcomeEmailTemplate = ({
+  userName,
+  userEmail,
+  password,
+  userRole,
+  confirmationUrl,
+}) => {
+  const currentDate = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #374151; background-color: #f9fafb; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 32px 24px; text-align: center; }
+        .header-icon { width: 48px; height: 48px; background-color: rgba(255, 255, 255, 0.2); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; font-size: 24px; font-weight: bold; color: white; }
+        .header h1 { color: #ffffff; font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+        .header p { color: rgba(255, 255, 255, 0.9); font-size: 16px; }
+        .content { padding: 32px 24px; }
+        .welcome-box { background-color: #eff6ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+        .welcome-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .welcome-title { font-weight: 600; color: #1d4ed8; font-size: 16px; }
+        .welcome-text { color: #1e40af; font-size: 14px; }
+        .credentials-box { background-color: #f3f4f6; border-radius: 8px; padding: 20px; margin: 24px 0; border-left: 4px solid #059669; }
+        .credential-item { margin-bottom: 12px; }
+        .credential-label { font-size: 12px; font-weight: 500; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .credential-value { font-size: 16px; font-weight: 600; color: #1f2937; background-color: #e5e7eb; padding: 8px 12px; border-radius: 4px; font-family: 'Courier New', monospace; }
+        .action-section { background-color: #f8fafc; border-radius: 8px; padding: 24px; margin: 24px 0; text-align: center; }
+        .action-button { display: inline-block; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; font-size: 16px; margin: 16px 8px; }
+        .action-button.secondary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
+        .warning-box { background-color: #fef3c7; border: 1px solid #fbbf24; border-radius: 8px; padding: 16px; margin: 24px 0; }
+        .warning-text { color: #92400e; font-size: 14px; }
+        .footer { background-color: #f9fafb; padding: 24px; border-top: 1px solid #e5e7eb; text-align: center; }
+        .footer-text { color: #6b7280; font-size: 14px; margin-bottom: 8px; }
+        @media (max-width: 600px) { .container { margin: 0 16px; } }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <div class="header-icon">
+            👋
+          </div>
+          <h1>Welcome to PhilSCA</h1>
+          <p>Your Academic System Account</p>
+        </div>
+
+        <div class="content">
+          <div class="welcome-box">
+            <div class="welcome-header">
+              <span style="color: #1d4ed8; font-size: 18px; font-weight: bold;">✓</span>
+              <span class="welcome-title">Account Successfully Created</span>
+            </div>
+            <p class="welcome-text">
+              Your ${userRole} account has been created in the PhilSCA Academic Management System.
+            </p>
+          </div>
+
+          <p>Dear <strong>${userName}</strong>,</p>
+          
+          <p>Welcome to the Philippine State College of Aeronautics (PhilSCA) Academic Management System! Your account has been successfully created with the following credentials:</p>
+
+          <div class="credentials-box">
+            <h3 style="color: #1f2937; font-size: 18px; margin-bottom: 16px;">Your Login Credentials</h3>
+            <div class="credential-item">
+              <div class="credential-label">Email / Username</div>
+              <div class="credential-value">${userEmail}</div>
+            </div>
+            <div class="credential-item">
+              <div class="credential-label">Temporary Password</div>
+              <div class="credential-value">${password}</div>
+            </div>
+            <div class="credential-item">
+              <div class="credential-label">Role</div>
+              <div class="credential-value">${userRole}</div>
+            </div>
+          </div>
+
+          ${
+            confirmationUrl === "VERIFICATION_REQUIRED"
+              ? `
+            <div class="action-section">
+              <h3 style="color: #1f2937; font-size: 18px; margin-bottom: 12px;">Important: Verify Your Email First</h3>
+              <p style="margin-bottom: 16px; color: #4b5563;">
+                You will receive a separate email from Supabase with a verification link. 
+                <strong>You must click that link before you can log in to the system.</strong>
+              </p>
+              <div style="background-color: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px; padding: 12px; margin: 16px 0;">
+                <p style="color: #92400e; font-size: 14px; margin: 0;">
+                  <strong>Check your inbox:</strong> Look for an email with subject "Confirm your signup" and click the verification link.
+                </p>
+              </div>
+            </div>
+          `
+              : confirmationUrl
+              ? `
+            <div class="action-section">
+              <h3 style="color: #1f2937; font-size: 18px; margin-bottom: 12px;">Important: Confirm Your Email</h3>
+              <p style="margin-bottom: 16px; color: #4b5563;">
+                Before you can log in, you must verify your email address by clicking the button below:
+              </p>
+              <a href="${confirmationUrl}" class="action-button">
+                Confirm Email Address
+              </a>
+              <p style="font-size: 14px; color: #6b7280; margin-top: 12px;">
+                This link will expire in 24 hours
+              </p>
+            </div>
+          `
+              : ""
+          }
+
+          <div class="action-section">
+            <h3 style="color: #1f2937; font-size: 18px; margin-bottom: 12px;">Next Steps</h3>
+            <ol style="text-align: left; margin: 16px 0; color: #4b5563; padding-left: 20px;">
+              ${
+                confirmationUrl
+                  ? '<li style="margin-bottom: 8px;"><strong>First:</strong> Check your inbox and verify your email address</li>'
+                  : ""
+              }
+              <li style="margin-bottom: 8px;">${
+                confirmationUrl ? "After email verification, log" : "Log"
+              } in to the system using your credentials</li>
+              <li style="margin-bottom: 8px;">Change your password on first login</li>
+              <li style="margin-bottom: 8px;">Complete your profile information</li>
+              ${
+                userRole === "Faculty"
+                  ? "<li>Set your teaching availability preferences</li>"
+                  : "<li>Explore the system features</li>"
+              }
+            </ol>
+            ${
+              confirmationUrl
+                ? ""
+                : `
+              <a href="https://icschedule.com/login" class="action-button secondary">
+                Login to System
+              </a>
+            `
+            }
+          </div>
+
+          <div class="warning-box">
+            <p class="warning-text">
+              <strong>Security Notice:</strong> This is a temporary password. Please change it immediately after your first login. 
+              Do not share your credentials with anyone.
+            </p>
+          </div>
+
+          <p>If you have any questions or need assistance, please contact the Academic Coordination Office.</p>
+        </div>
+
+        <div class="footer">
+          <p class="footer-text">
+            This email was sent on ${currentDate} by the Academic Coordination Office
+          </p>
+          <p style="color: #3b82f6; font-size: 14px;">
+            PhilSCA Academic Management System
+          </p>
+          <p style="font-size: 12px; color: #9ca3af; margin-top: 16px;">
+            If you have questions about your account, please contact the Academic Coordination Office.
+          </p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
+
 module.exports = {
   sendTeacherAvailabilityNotification,
   testEmailService,
   sendScheduleConfirmationEmails,
+  sendWelcomeEmailWithPassword,
 };
