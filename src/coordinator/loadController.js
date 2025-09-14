@@ -82,8 +82,8 @@ const getLoad = async (req, res) => {
         schedulesByTeacher[sched.teacher_id] = [];
       }
       schedulesByTeacher[sched.teacher_id].push(sched);
-    });
-
+    });    
+    
     // Build result with all faculty, including those with no schedules
     const result = facultyData.map((profile) => {
       const user = profile.user_profile;
@@ -110,6 +110,7 @@ const getLoad = async (req, res) => {
         const hours = parseInt(sched.total_duration?.split(":")[0]) || 0;
 
         assignedSubjects.push({
+          sched_id: sched.id,
           id: sched.subjects?.id,
           name: sched.subjects?.subject,
           code: sched.subjects?.subject_code,
@@ -126,6 +127,8 @@ const getLoad = async (req, res) => {
           room: sched.rooms?.room_id,
         });
 
+        console.log(assignedSubjects);
+        
         totalUnits += hours || 0;
         totalTeachingHours += hours;
 
@@ -524,6 +527,20 @@ const reassignSubject = async (req, res) => {
   try {
     if (updateFields.days) {
       updateFields.days = abbreviateDays(updateFields.days);
+    }
+
+    const { data: existingSchedule, error: fetchError } = await supabase
+      .from("teacher_schedules")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!existingSchedule) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Schedule not found.",
+      });
     }
 
     // const { data, error } = await supabase
