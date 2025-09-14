@@ -100,7 +100,7 @@ const getSchedule = async (req, res) => {
   }
 };
 
-const createSChedule = async (req, res) => {
+const createSchedule = async (req, res) => {
   try {
     const {
       subject_id,
@@ -115,9 +115,161 @@ const createSChedule = async (req, res) => {
       school_year 
     } = req.body;
 
-    const scheduleData = await ensureAcademicPeriodId(supabase, {
+    const { data: teacherData, error: teacherError } = await supabase
+      .from('teacher_profile')      
+      .select(`
+        id,
+        current_load,
+        avail_days,
+        pref_time,
+        specializations,
+        position_id,
+        positions!inner ( min_load )
+      `)
+      .eq("user_id", teacher_id)
+      .single()
+
+    if (teacherError || !teacherData) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Teacher does not exist.",
+      });
+    }
+
+    const abbrevDays = abbreviateDays(days);
+        
+    const chosenDays = Array.isArray(abbrevDays) ? abbrevDays : [abbrevDays];
+    const dayMap = {
+      M: "Monday",
+      T: "Tuesday",
+      W: "Wednesday",
+      Th: "Thursday",
+      F: "Friday",
+      S: "Saturday",
+      SU: "Sunday",
+    };
+
+    const { data: subjectData, error: subjectError } = await supabase
+      .from("subjects")
+      .select("units, specialization")
+      .eq("id", subject_id)
+      .single();
+
+    if (subjectError || !subjectData) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Subject not found.",
+      });
+    }
+
+    const { current_load, positions, avail_days, pref_time, specializations } = teacherData;
+    const min_load = positions?.min_load || 0;
+    const { units, specialization } = subjectData;
+
+    // === 3. Load limit check ===
+    if (current_load + units > min_load + 12) {
+      return res.status(400).json({
+        title: "Failed",
+        message: `Cannot assign subject. Adding ${units} units will exceed allowed load (${min_load + 12}).`,
+      });
+    }
+
+    // === 4. Specialization check ===
+    const specList = specializations?.split(",").map((s) => s.replace(/"/g, "").trim()) || [];
+    if (!specList.includes(specialization.trim())) {
+      return res.status(400).json({
+        title: "Failed",
+        message: `Teacher is not specialized to teach this subject (${specialization}).`,
+      });
+    }
+
+    const invalidDay = chosenDays.find((d) => !avail_days?.includes(d));
+    if (invalidDay) {
+      return res.status(400).json({
+        title: "Failed",
+        message: `Teacher is not available on ${dayMap[invalidDay] || invalidDay}.`,
+      });
+    }
+
+    // === 6. Availability check (time) ===
+    const parseTimeToMinutes = (t) => {
+      if (!t) return null;
+      const [h, m, s] = t.split(":").map(Number);
+      return h * 60 + m + Math.floor((s || 0) / 60);
+    };
+
+    const [prefStartStr, prefEndStr] = pref_time?.split("-").map((t) => t.trim()) || [];
+    const prefStartMin = parseTimeToMinutes(prefStartStr);
+    const prefEndMin = parseTimeToMinutes(prefEndStr);
+
+    const startMin = parseTimeToMinutes(start_time);
+    const endMin = parseTimeToMinutes(end_time);
+
+    if (startMin == null || endMin == null || startMin >= endMin) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Invalid start_time or end_time.",
+      });
+    }
+
+    if (startMin < prefStartMin || endMin > prefEndMin) {
+      return res.status(400).json({
+        title: "Failed",
+        message: `Time must be within teacher's preferred window (${prefStartStr}-${prefEndStr}).`,
+      });
+    }
+
+    // === 7. Room conflict ===
+    const { data: roomConflict } = await supabase
+      .from("teacher_schedules")
+      .select("id, days")
+      .eq("room_id", room_id)
+      .in("days", chosenDays)
+      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
+
+    if (roomConflict?.length > 0) {
+      const conflictDays = [...new Set(roomConflict.map((c) => dayMap[c.days] || c.days))];
+      return res.status(400).json({
+        title: "Failed",
+        message: `Room is already booked on ${conflictDays.join(", ")}.`,
+      });
+    }
+
+    // === 8. Section conflict ===
+    const { data: sectionConflict } = await supabase
+      .from("teacher_schedules")
+      .select("id, days")
+      .eq("section_id", section_id)
+      .in("days", chosenDays)
+      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
+
+    if (sectionConflict?.length > 0) {
+      const conflictDays = [...new Set(sectionConflict.map((c) => dayMap[c.days] || c.days))];
+      return res.status(400).json({
+        title: "Failed",
+        message: `Section already has a class at this time on ${conflictDays.join(", ")}.`,
+      });
+    }
+
+    // === 9. Teacher conflict ===
+    const { data: teacherConflict } = await supabase
+      .from("teacher_schedules")
+      .select("id, days")
+      .eq("teacher_id", teacherData.id)
+      .in("days", chosenDays)
+      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
+
+    if (teacherConflict?.length > 0) {
+      const conflictDays = [...new Set(teacherConflict.map((c) => dayMap[c.days] || c.days))];
+      return res.status(400).json({
+        title: "Failed",
+        message: `Teacher already has another class scheduled at this time on ${conflictDays.join(", ")}.`,
+      });
+    }
+
+    const scheduleData = {
       subject_id,
-      teacher_id,
+      teacher_id: teacherData.id,
       section_id,
       room_id,
       days: abbreviateDays(days),
@@ -125,8 +277,8 @@ const createSChedule = async (req, res) => {
       end_time,
       total_copunt,
       semester,
-      school_year,
-    });
+      school_year: "1st Year",
+    };
         
     const { data, error } = await supabase
       .from('teacher_schedules')
@@ -159,7 +311,7 @@ const createSChedule = async (req, res) => {
 const updateSchedule = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
+    let {
       subject_id,
       teacher_id,
       section_id,
@@ -171,20 +323,180 @@ const updateSchedule = async (req, res) => {
       semester,
       school_year,
     } = req.body;
-    days = abbreviateDays(days);
+
+    // === Abbreviate & normalize days ===
+    const abbrevDays = abbreviateDays(days);
+    const chosenDays = Array.isArray(abbrevDays) ? abbrevDays : [abbrevDays];
+    const dayMap = {
+      M: "Monday",
+      T: "Tuesday",
+      W: "Wednesday",
+      Th: "Thursday",
+      F: "Friday",
+      S: "Saturday",
+      SU: "Sunday",
+    };
+
+    // === Fetch teacher ===
+    const { data: teacherData, error: teacherError } = await supabase
+      .from("teacher_profile")
+      .select(`
+        id,
+        current_load,
+        avail_days,
+        pref_time,
+        specializations,
+        position_id,
+        positions!inner ( min_load )
+      `)
+      .eq("user_id", teacher_id)
+      .single();
+
+    if (teacherError || !teacherData) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Teacher does not exist.",
+      });
+    }
+
+    // === Fetch subject ===
+    const { data: subjectData, error: subjectError } = await supabase
+      .from("subjects")
+      .select("units, specialization")
+      .eq("id", subject_id)
+      .single();
+
+    if (subjectError || !subjectData) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Subject not found.",
+      });
+    }
+
+    const { current_load, positions, avail_days, pref_time, specializations } = teacherData;
+    const min_load = positions?.min_load || 0;
+    const { units, specialization } = subjectData;
+
+    // === Load limit check ===
+    if (current_load + units > min_load + 12) {
+      return res.status(400).json({
+        title: "Failed",
+        message: `Cannot assign subject. Adding ${units} units will exceed allowed load (${min_load + 12}).`,
+      });
+    }
+
+    // === Specialization check ===
+    const specList = specializations?.split(",").map((s) => s.replace(/"/g, "").trim()) || [];
+    if (!specList.includes(specialization.trim())) {
+      return res.status(400).json({
+        title: "Failed",
+        message: `Teacher is not specialized to teach this subject (${specialization}).`,
+      });
+    }
+
+    // === Availability check (days) ===
+    const invalidDay = chosenDays.find((d) => !avail_days?.includes(d));
+    if (invalidDay) {
+      return res.status(400).json({
+        title: "Failed",
+        message: `Teacher is not available on ${dayMap[invalidDay] || invalidDay}.`,
+      });
+    }
+
+    // === Availability check (time) ===
+    const parseTimeToMinutes = (t) => {
+      if (!t) return null;
+      const [h, m, s] = t.split(":").map(Number);
+      return h * 60 + m + Math.floor((s || 0) / 60);
+    };
+
+    const [prefStartStr, prefEndStr] = pref_time?.split("-").map((t) => t.trim()) || [];
+    const prefStartMin = parseTimeToMinutes(prefStartStr);
+    const prefEndMin = parseTimeToMinutes(prefEndStr);
+
+    const startMin = parseTimeToMinutes(start_time);
+    const endMin = parseTimeToMinutes(end_time);
+
+    if (startMin == null || endMin == null || startMin >= endMin) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Invalid start_time or end_time.",
+      });
+    }
+
+    if (startMin < prefStartMin || endMin > prefEndMin) {
+      return res.status(400).json({
+        title: "Failed",
+        message: `Time must be within teacher's preferred window (${prefStartStr}-${prefEndStr}).`,
+      });
+    }
+
+    // === Conflict checks ===
+    // Room conflict
+    const { data: roomConflict } = await supabase
+      .from("teacher_schedules")
+      .select("id, days")
+      .eq("room_id", room_id)
+      .in("days", chosenDays)
+      .neq("id", id) // exclude current schedule
+      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
+
+    if (roomConflict?.length > 0) {
+      const conflictDays = [...new Set(roomConflict.map((c) => dayMap[c.days] || c.days))];
+      return res.status(400).json({
+        title: "Failed",
+        message: `Room is already booked on ${conflictDays.join(", ")}.`,
+      });
+    }
+
+    // Section conflict
+    const { data: sectionConflict } = await supabase
+      .from("teacher_schedules")
+      .select("id, days")
+      .eq("section_id", section_id)
+      .in("days", chosenDays)
+      .neq("id", id)
+      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
+
+    if (sectionConflict?.length > 0) {
+      const conflictDays = [...new Set(sectionConflict.map((c) => dayMap[c.days] || c.days))];
+      return res.status(400).json({
+        title: "Failed",
+        message: `Section already has a class at this time on ${conflictDays.join(", ")}.`,
+      });
+    }
+
+    // Teacher conflict
+    const { data: teacherConflict } = await supabase
+      .from("teacher_schedules")
+      .select("id, days")
+      .eq("teacher_id", teacherData.id)
+      .in("days", chosenDays)
+      .neq("id", id)
+      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
+
+    if (teacherConflict?.length > 0) {
+      const conflictDays = [...new Set(teacherConflict.map((c) => dayMap[c.days] || c.days))];
+      return res.status(400).json({
+        title: "Failed",
+        message: `Teacher already has another class scheduled at this time on ${conflictDays.join(", ")}.`,
+      });
+    }
+
+    // === Perform update ===
     const { data, error } = await supabase
       .from("teacher_schedules")
       .update({
         subject_id,
-        teacher_id,
+        teacher_id: teacherData.id,
         section_id,
         room_id,
-        days,
+        days: abbrevDays,
         start_time,
         end_time,
         total_copunt,
         semester,
-        school_year,
+        school_year: "1st Year",
       })
       .eq("id", id)
       .select();
@@ -199,9 +511,10 @@ const updateSchedule = async (req, res) => {
       });
     }
 
+    // === Activity log ===
     await supabase.from("activity_logs").insert({
       activity: `Updated schedule ${id} → subject ${subject_id}, teacher ${teacher_id}, section ${section_id}, room ${room_id}, ${days} ${start_time}-${end_time}`,
-      by: req.body.user_id ?? null
+      by: req.body.user_id ?? null,
     });
 
     return res.status(200).json({
@@ -219,6 +532,7 @@ const updateSchedule = async (req, res) => {
     });
   }
 };
+
 
 const deleteSchedule = async (req, res) => {
   try {
@@ -262,7 +576,7 @@ const deleteSchedule = async (req, res) => {
 
 module.exports = {
   getSchedule,
-  createSChedule,
+  createSchedule,
   updateSchedule,
   deleteSchedule,
 };

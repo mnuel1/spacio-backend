@@ -14,7 +14,7 @@ const {
 } = require("../coordinator/facultyController");
 
 const {
-  createSChedule,
+  createSchedule,
   updateSchedule,
   deleteSchedule,
   getSchedule,
@@ -69,7 +69,7 @@ router.delete("/faculty/:id", deleteFaculty);
 router.get("/faculty", getFaculty);
 router.get("/faculty/data-integrity/check", checkFacultyDataIntegrity);
 
-router.post("/schedule", createSChedule);
+router.post("/schedule", createSchedule);
 router.put("/schedule/:id", updateSchedule);
 router.delete("/schedule/:id", deleteSchedule);
 router.get("/schedule", getSchedule);
