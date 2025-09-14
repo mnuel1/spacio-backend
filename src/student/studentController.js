@@ -1,4 +1,4 @@
-const supabase = require("../../supabase");
+const supabase = require("../supabase.js");
 
 const parseAvailableDays = require("../utils.js").parseAvailableDays;
 const {

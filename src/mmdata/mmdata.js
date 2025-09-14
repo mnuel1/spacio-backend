@@ -1,4 +1,4 @@
-const supabase = require("../../supabase");
+const supabase = require("../supabase");
 
 const getDataMaster = async (req, res) => {
   try {

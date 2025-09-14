@@ -1,4 +1,4 @@
-const supabase = require("../../supabase");
+const supabase = require("../supabase");
 const { getUsersQuery } = require("../queries/coordinator");
 
 const fs = require("fs");

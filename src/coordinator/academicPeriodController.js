@@ -1,4 +1,4 @@
-const supabase = require("../../supabase");
+const supabase = require("../supabase");
 const { getCurrentAcademicPeriod } = require("../utils");
 
 // Get current academic period

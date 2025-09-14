@@ -1,5 +1,5 @@
-const supabase = require("../../supabase");
-require('dotenv').config();
+const supabase = require("../supabase");
+// require('dotenv').config();
 const APP_URL = process.env.APP_URL
 const editInfo = async (req, res) => {
   try {

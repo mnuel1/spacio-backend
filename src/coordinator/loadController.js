@@ -1,4 +1,4 @@
-const supabase = require("../../supabase");
+const supabase = require("../supabase.js");
 const getLoadQuery = require("../queries/coordinator").getLoadQuery;
 const {
   parseAvailableDays,

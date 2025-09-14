@@ -1,4 +1,4 @@
-const supabase = require("../../supabase");
+const supabase = require("../supabase");
 const getFacultyQuery = require("../queries/coordinator").getFacultyQuery
 const getSchedulesQuery = require("../queries/coordinator").getSchedulesQuery
 
