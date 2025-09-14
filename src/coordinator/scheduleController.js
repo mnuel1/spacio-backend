@@ -25,8 +25,6 @@ const transformSchedule = (teacher) => {
     return (endTime - startTime) / 60000; // in minutes
   };
 
-  console.log(teacher);
-  
   // return {
   //   id: schedule.id, // e.g., SCH001
   //   subjectId: schedule?.subjects?.id || "None",
