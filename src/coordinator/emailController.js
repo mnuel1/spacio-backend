@@ -130,7 +130,7 @@ const sendTeacherAvailabilityNotification = async (req, res) => {
       }
 
       return resend.emails.send({
-        from: "Spacio Academic System <noreply@icschedule.com>",
+        from: "PhilSCA Academic System <noreply@icschedule.com>",
         to: [teacher.email],
         subject: "Action Required: Please Set Your Teaching Availability",
         html: emailHtml,
@@ -410,7 +410,7 @@ const generateAvailabilityEmailTemplate = ({
           <p>Dear <strong>${teacherName}</strong>,</p>
           
           <p>We hope this message finds you well. As we prepare for the upcoming academic scheduling, 
-          we've noticed that your teaching availability preferences have not been set in the Spacio system.</p>
+          we've noticed that your teaching availability preferences have not been set in the PhilSCA system.</p>
 
           <div class="teacher-info">
             <h3>Your Current Information</h3>
@@ -468,7 +468,7 @@ const generateAvailabilityEmailTemplate = ({
           <div class="action-section">
             <h3 style="margin-bottom: 12px; color: #1f2937;">What You Need to Do</h3>
             <p style="margin-bottom: 16px; color: #4b5563;">
-              Please log in to the Spacio system and update your availability preferences:
+              Please log in to the PhilSCA system and update your availability preferences:
             </p>
             <ul style="text-align: left; margin: 16px 0; color: #4b5563;">
               <li style="margin-bottom: 8px;">Set your available teaching days</li>
@@ -502,7 +502,7 @@ const generateAvailabilityEmailTemplate = ({
             Contact: ${coordinatorName} - ${coordinatorEmail}
           </p>
           <p style="font-size: 12px; color: #9ca3af; margin-top: 16px;">
-            Spacio Academic Management System<br>
+            PhilSCA Academic Management System<br>
             This is an automated notification. Please do not reply to this email.
           </p>
         </div>
@@ -602,7 +602,7 @@ const sendScheduleConfirmationEmails = async (teachers, schedule, loadMap) => {
       });
 
       return resend.emails.send({
-        from: "Spacio Academic System <noreply@icschedule.com>",
+        from: "PhilSCA Academic System <noreply@icschedule.com>",
         to: [teacherEmail],
         subject: "Schedule Update: Your New Teaching Assignment",
         html: emailHtml,
@@ -782,7 +782,7 @@ const generateScheduleConfirmationTemplate = ({
             This email was sent on ${currentDate} by the Academic Coordination Office
           </p>
           <p style="color: #3b82f6; font-size: 14px;">
-            Spacio Academic Management System
+            PhilSCA Academic Management System
           </p>
           <p style="font-size: 12px; color: #9ca3af; margin-top: 16px;">
             If you have questions about your schedule, please contact the Academic Coordination Office.
