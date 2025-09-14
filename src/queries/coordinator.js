@@ -96,44 +96,83 @@ export const getSchedulesQuery = `
 
 export const getLoadQuery = `
   id,
-  days,
-  start_time,
-  end_time,
-  total_count,
-  total_duration,
-  semester,
-  school_year,
-  teacher_profile:teacher_schedules_teacher_id_fkey (
-    id,
-    current_load,
-    contract_type,
-    specializations, 
-    qualifications,
-    avail_days,
-    unavail_days,
-    pref_time,
-    user_profile:teacher_profile_user_id_fkey (
-      id, user_id, name, email, profile_image, status
-    ),
-    positions:user_roles_position_id_fkey (
-      id, position, max_load, min_load
-    ),
-    departments:user_roles_department_id_fkey (
-      id, name
-    ),
-    created_at
+  current_load,
+  contract_type,
+  specializations,
+  qualifications,
+  avail_days,
+  unavail_days,
+  pref_time,
+  user_profile:teacher_profile_user_id_fkey (
+    id, user_id, name, email, profile_image, status
   ),
-  subjects:teacher_schedules_subject_id_fkey (
-    id, subject_code, subject, total_hours, units, semester, school_year
+  positions:user_roles_position_id_fkey (
+    id, position, max_load, min_load
   ),
-  sections:teacher_schedules_section_id_fkey (
+  departments:user_roles_department_id_fkey (
     id, name
   ),
-  rooms:teacher_schedules_room_id_fkey (
-    id, room_id, room_title, room_desc, status, floor
+  created_at,
+  teacher_schedules (
+    id,
+    subjects:teacher_schedules_subject_id_fkey (
+      id, subject_code, subject, total_hours, units, semester, school_year
+    ),
+    section:teacher_schedules_section_id_fkey (
+      id, name
+    ),
+    room:teacher_schedules_room_id_fkey (
+      id, room_id, room_title, room_desc, status, floor
+    ),
+    days,
+    start_time,
+    end_time,
+    total_duration,
+    total_count,
+    semester,
+    school_year,
+    created_at,
+    updated_at
   )
 `;
 
+// id,
+//   days,
+//   start_time,
+//   end_time,
+//   total_count,
+//   total_duration,
+//   semester,
+//   school_year,
+//   teacher_profile:teacher_schedules_teacher_id_fkey (
+//     id,
+//     current_load,
+//     contract_type,
+//     specializations, 
+//     qualifications,
+//     avail_days,
+//     unavail_days,
+//     pref_time,
+//     user_profile:teacher_profile_user_id_fkey (
+//       id, user_id, name, email, profile_image, status
+//     ),
+//     positions:user_roles_position_id_fkey (
+//       id, position, max_load, min_load
+//     ),
+//     departments:user_roles_department_id_fkey (
+//       id, name
+//     ),
+//     created_at
+//   ),
+//   subjects:teacher_schedules_subject_id_fkey (
+//     id, subject_code, subject, total_hours, units, semester, school_year
+//   ),
+//   sections:teacher_schedules_section_id_fkey (
+//     id, name
+//   ),
+//   rooms:teacher_schedules_room_id_fkey (
+//     id, room_id, room_title, room_desc, status, floor
+//   )
 export const getUsersQuery = `
   id,
   user_id,

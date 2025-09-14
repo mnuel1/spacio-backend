@@ -17,7 +17,7 @@ const abbreviateDays = (days) => {
   return days.map((day) => dayAbbreviations[day] || day);
 };
 
-const transformSchedule = (schedule) => {
+const transformSchedule = (teacher) => {
   // Format duration in minutes
   const getDuration = (start, end) => {
     const startTime = new Date(`1970-01-01T${start}Z`);
@@ -25,11 +25,40 @@ const transformSchedule = (schedule) => {
     return (endTime - startTime) / 60000; // in minutes
   };
 
-  return {
-    id: schedule.id, // e.g., SCH001
+  // return {
+  //   id: schedule.id, // e.g., SCH001
+  //   subjectId: schedule?.subjects?.id || "None",
+  //   facultyId: schedule.teacher_profile.id,
+  //   roomId: schedule.room.id,
+  //   timeSlot: {
+  //     id: schedule.id,
+  //     day: schedule.days || "",
+  //     startTime: schedule.start_time ? schedule.start_time.slice(0, 5) : "",
+  //     endTime: schedule.end_time ? schedule.end_time.slice(0, 5) : "",
+  //     duration: getDuration(schedule.start_time, schedule.end_time),
+  //   },
+  //   section: schedule.section?.name || "",
+  //   enrollmentCount: schedule.total_count || 0,
+  //   academicYear: schedule.school_year || "",
+  //   semester: schedule.semester || "",
+  //   status: "Scheduled", // static since you didn't provide dynamic status
+  //   createdAt: schedule.created_at ? new Date(schedule.created_at) : null,
+  //   updatedAt: schedule.updated_at ? new Date(schedule.updated_at) : null,
+  //   createdBy: schedule.user_profile?.name || "",
+  //   extra: {
+  //     teacher_profile: schedule.teacher_profile,
+  //     subjects: schedule.subjects,
+  //     room: schedule.room,
+  //     user_profile: schedule.user_profile,
+  //   },
+  // };
+
+  // If teacher has schedules, map them
+  const schedules = (teacher.teacher_schedules || []).map((schedule) => ({
+    id: schedule.id,
     subjectId: schedule?.subjects?.id || "None",
-    facultyId: schedule.teacher_profile.id,
-    roomId: schedule.room.id,
+    facultyId: teacher.id,
+    roomId: schedule?.room?.id || null,
     timeSlot: {
       id: schedule.id,
       day: schedule.days || "",
@@ -41,16 +70,32 @@ const transformSchedule = (schedule) => {
     enrollmentCount: schedule.total_count || 0,
     academicYear: schedule.school_year || "",
     semester: schedule.semester || "",
-    status: "Scheduled", // static since you didn't provide dynamic status
+    status: "Scheduled",
     createdAt: schedule.created_at ? new Date(schedule.created_at) : null,
     updatedAt: schedule.updated_at ? new Date(schedule.updated_at) : null,
     createdBy: schedule.user_profile?.name || "",
     extra: {
-      teacher_profile: schedule.teacher_profile,
+      teacher_profile: {
+        id: teacher.id,
+        current_load: teacher.current_load,
+        user_profile: teacher.user_profile,
+        positions: teacher.positions,
+        departments: teacher.departments,
+      },
       subjects: schedule.subjects,
       room: schedule.room,
       user_profile: schedule.user_profile,
     },
+  }));
+
+  return {
+    teacherId: teacher.id,
+    name: teacher.user_profile?.name || "",
+    email: teacher.user_profile?.email || "",
+    positions: teacher.positions || null,
+    departments: teacher.departments || null,
+    currentLoad: teacher.current_load || 0,
+    schedules, // ✅ all schedules for this teacher (can be empty array)
   };
 };
 
