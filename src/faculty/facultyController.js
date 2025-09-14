@@ -623,13 +623,13 @@ const updateMyProfile = async (req, res) => {
 
     const updateData = {};
 
-    // Convert arrays to comma-separated strings for database storage
+    // Convert arrays to comma-separated strings with quotes for database storage
     if (Array.isArray(specializations)) {
-      updateData.specializations = specializations.join(", ");
+      updateData.specializations = `"${specializations.join('", "')}"`;
     }
 
     if (Array.isArray(certifications)) {
-      updateData.certifications = certifications.join(", ");
+      updateData.certifications = `"${certifications.join('", "')}"`;
     }
 
     const { data, error } = await supabase
