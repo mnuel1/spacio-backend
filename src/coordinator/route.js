@@ -84,6 +84,10 @@ router.get("/section/schedule", sectionSchedule);
 
 const upload = multer({ dest: "uploads/" });
 
+// Store files in memory
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
 router.post("/users/signup", upload.single("file"), addUsersByFile);
 router.get("/users", getUsers);
 router.put("/users/deactivate/:id", deactivateUser);
