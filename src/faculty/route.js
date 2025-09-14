@@ -9,7 +9,7 @@ const {
   checkMyAvailabilityStatus,
   getMyProfile,
   updateMyProfile,
-  checkOnboardingStatus
+  checkOnboardingStatus,
 } = require("./facultyController");
 
 const facultyRouter = express.Router();
