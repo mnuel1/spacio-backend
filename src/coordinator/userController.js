@@ -35,7 +35,7 @@ const deactivateUser = async (req, res) => {
 
     const { data, error } = await supabase
       .from("user_profile")
-      .update({ status: "Inactive" })
+      .update({ status: false }) // Changed from "Inactive" to false
       .eq("id", id)
       .select();
 
