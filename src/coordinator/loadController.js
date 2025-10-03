@@ -450,7 +450,7 @@ const addSubject = async (req, res) => {
         end_time,
         total_count,
         semester,
-        school_year,
+        school_year: '1st Year',
         total_duration,
       })
       .select();
@@ -486,7 +486,8 @@ const addSubject = async (req, res) => {
 
 const removeSubject = async (req, res) => {
   const { id } = req.params;
-
+  console.log(id);
+  
   try {
     const { data, error } = await supabase
       .from("teacher_schedules")
@@ -1592,7 +1593,7 @@ const sectionSchedule = async (req, res) => {
             id, user_id, name, email, profile_image, status
           ) 
         ),
-        subjects:teacher_schedules_subject_id_fkey ( id, subject_code, subject ),
+        subjects:teacher_schedules_subject_id_fkey ( id, subject_code, subject, units ),
         sections:teacher_schedules_section_id_fkey ( id, name ),
         rooms:teacher_schedules_room_id_fkey ( room_id, room_title )
       `);
@@ -1636,7 +1637,7 @@ const sectionSchedule = async (req, res) => {
           room_title: row.rooms?.room_title,
           room_id: row.rooms?.room_id,
           room_type: row.rooms?.type,
-          units: row.total_duration,
+          units: row.subjects.units,
         });
       });
     });
