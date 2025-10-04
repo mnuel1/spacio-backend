@@ -132,6 +132,24 @@ const createFaculty = async (req, res) => {
 
     const fullName = combineFullName(firstName, middleName, lastName);
 
+    // Check if email already exists in user_profile
+    const { data: existingUser, error: checkError } = await supabase
+      .from("user_profile")
+      .select("id, email, name")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("Error checking existing user:", checkError);
+      throw checkError;
+    }
+
+    if (existingUser) {
+      throw new Error(
+        `A user with email ${email} already exists in the system.`
+      );
+    }
+
     // Generate default password (name in caps)
     const defaultPassword = fullName.toUpperCase().replace(/\s+/g, "");
 
@@ -216,9 +234,58 @@ const createFaculty = async (req, res) => {
   } catch (error) {
     console.error("Error creating faculty:", error.message);
 
-    return res.status(500).json({
+    // Handle specific Supabase/Postgres errors
+    let errorMessage = "Something went wrong!";
+    let statusCode = 500;
+
+    if (error.message) {
+      // Check for duplicate email error
+      if (
+        error.message.includes("duplicate key value") ||
+        error.message.includes("User already registered") ||
+        error.code === "23505"
+      ) {
+        errorMessage =
+          "A user with this email already exists. Please use a different email address.";
+        statusCode = 409; // Conflict
+      }
+      // Check for auth errors
+      else if (
+        error.message.includes("email") &&
+        error.message.includes("already")
+      ) {
+        errorMessage = "This email is already registered in the system.";
+        statusCode = 409;
+      }
+      // Check for Supabase single() errors
+      else if (error.message.includes("multiple (or no) rows returned")) {
+        errorMessage =
+          "This email address is already registered in the system. Please use a different email address.";
+        statusCode = 409;
+      }
+      // Check for validation errors
+      else if (
+        error.message.includes("invalid") ||
+        error.message.includes("validation")
+      ) {
+        errorMessage = error.message;
+        statusCode = 400; // Bad Request
+      }
+      // Check for foreign key constraint errors
+      else if (error.code === "23503") {
+        errorMessage =
+          "Invalid department or position selected. Please check your selection.";
+        statusCode = 400;
+      }
+      // Use the actual error message if available
+      else if (error.message !== "Something went wrong!") {
+        errorMessage = error.message;
+      }
+    }
+
+    return res.status(statusCode).json({
       title: "Failed",
-      message: "Something went wrong!",
+      message: errorMessage,
       data: null,
     });
   }
@@ -238,6 +305,26 @@ const updateFaculty = async (req, res) => {
     } = req.body;
 
     const fullName = combineFullName(firstName, middleName, lastName);
+
+    // Check if email is being changed to one that already exists (for a different user)
+    const { data: existingUserWithEmail, error: emailCheckError } =
+      await supabase
+        .from("user_profile")
+        .select("id, email")
+        .eq("email", email)
+        .neq("id", id)
+        .maybeSingle();
+
+    if (emailCheckError) {
+      console.error("Error checking email:", emailCheckError);
+      throw emailCheckError;
+    }
+
+    if (existingUserWithEmail) {
+      throw new Error(
+        `A user with email ${email} already exists in the system.`
+      );
+    }
 
     // Update user profile
     const { error: userError } = await supabase
@@ -481,9 +568,63 @@ const updateFaculty = async (req, res) => {
   } catch (error) {
     console.error("Error updating faculty:", error.message);
 
-    return res.status(500).json({
+    // Handle specific Supabase/Postgres errors
+    let errorMessage = "Something went wrong!";
+    let statusCode = 500;
+
+    if (error.message) {
+      // Check for duplicate email error
+      if (
+        error.message.includes("duplicate key value") ||
+        error.message.includes("User already registered") ||
+        error.code === "23505"
+      ) {
+        errorMessage =
+          "A user with this email already exists. Please use a different email address.";
+        statusCode = 409; // Conflict
+      }
+      // Check for auth errors
+      else if (
+        error.message.includes("email") &&
+        error.message.includes("already")
+      ) {
+        errorMessage = "This email is already registered in the system.";
+        statusCode = 409;
+      }
+      // Check for Supabase single() errors
+      else if (error.message.includes("multiple (or no) rows returned")) {
+        errorMessage =
+          "Unable to update faculty member. Please refresh the page and try again.";
+        statusCode = 500;
+      }
+      // Check for validation errors
+      else if (
+        error.message.includes("invalid") ||
+        error.message.includes("validation")
+      ) {
+        errorMessage = error.message;
+        statusCode = 400; // Bad Request
+      }
+      // Check for foreign key constraint errors
+      else if (error.code === "23503") {
+        errorMessage =
+          "Invalid department or position selected. Please check your selection.";
+        statusCode = 400;
+      }
+      // Check for not found errors
+      else if (error.message.includes("not found")) {
+        errorMessage = error.message;
+        statusCode = 404;
+      }
+      // Use the actual error message if available
+      else if (error.message !== "Something went wrong!") {
+        errorMessage = error.message;
+      }
+    }
+
+    return res.status(statusCode).json({
       title: "Failed",
-      message: "Something went wrong!",
+      message: errorMessage,
       data: null,
     });
   }
@@ -575,9 +716,34 @@ const deleteFaculty = async (req, res) => {
   } catch (error) {
     console.error("Error deleting faculty:", error.message);
 
-    return res.status(500).json({
+    // Handle specific Supabase/Postgres errors
+    let errorMessage = "Something went wrong!";
+    let statusCode = 500;
+
+    if (error.message) {
+      // Check for foreign key constraint errors (faculty has related records)
+      if (error.code === "23503" || error.message.includes("foreign key")) {
+        errorMessage =
+          "Cannot delete faculty member. They have related records (schedules, assignments, etc.). Please remove those first or contact support.";
+        statusCode = 409; // Conflict
+      }
+      // Check for not found errors
+      else if (
+        error.message.includes("not found") ||
+        error.message.includes("Faculty not found")
+      ) {
+        errorMessage = "Faculty member not found.";
+        statusCode = 404;
+      }
+      // Use the actual error message if available
+      else if (error.message !== "Something went wrong!") {
+        errorMessage = error.message;
+      }
+    }
+
+    return res.status(statusCode).json({
       title: "Failed",
-      message: error.message || "Something went wrong!",
+      message: errorMessage,
       data: null,
     });
   }
