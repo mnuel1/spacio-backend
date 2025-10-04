@@ -1,14 +1,21 @@
 export const getMySchedulesQuery = `
     id,
+    teacher_id,
+    semester,
+    school_year,
     total_count,
     start_time,
     end_time,
     days,
+    total_duration,
+    created_at,
+    updated_at,
+    created_by,
     subjects (
-        id, subject_code, subject
+        id, subject_code, subject, units
     ),
-    room (
-        id, room_title
+    rooms:teacher_schedules_room_id_fkey (
+        id, room_id, room_title
     ),
     sections (
         id, name
