@@ -285,38 +285,45 @@ const getMySchedules = async (req, res) => {
       throw error;
     }
 
-    const events = data.map((item, index) => {
-      const [hour, minute, second] = item.start_time.split(":").map(Number);
-      const [endHour, endMinute] = item.end_time.split(":").map(Number);
-
-      const start = new Date();
-      const end = new Date();
-
-      start.setHours(hour, minute, second || 0, 0);
-      end.setHours(endHour, endMinute, 0, 0);
-
-      return {
-        id: `event-${index + 1}`,
-        title: item.subjects.subject_code,
-        subject: item.subjects.subject,
-        subjectCode: item.subjects.subject_code,
-        room: item.rooms?.room_title || "TBA",
-        section: item.sections?.name || "Unknown",
-        students: item.total_count || 0,
-        start,
-        end,
-        type: "lecture", // hardcoded or derive from subject if available
-        status: "Scheduled",
-        description: "", // optional: if subject.description available
-        objectives: [], // optional: fill if available
-        materials: [], // optional: fill if available
-      };
-    });
+    // Return raw schedule data with days field so frontend can map to correct week dates
+    const schedules = data.map((item, index) => ({
+      id: item.id || `schedule-${index + 1}`,
+      teacher_id: item.teacher_id,
+      subject_id: item.subjects?.id,
+      room_id: item.rooms?.id,
+      section_id: item.sections?.id,
+      start_time: item.start_time, // e.g., "13:00:00"
+      end_time: item.end_time, // e.g., "15:00:00"
+      total_count: item.total_count || 0,
+      semester: item.semester,
+      school_year: item.school_year,
+      days: item.days, // e.g., "MWF" or "TTh"
+      total_duration: item.total_duration,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      created_by: item.created_by,
+      // Nested objects for frontend compatibility
+      subject: {
+        id: item.subjects?.id,
+        subject_code: item.subjects?.subject_code,
+        subject: item.subjects?.subject,
+        units: item.subjects?.units,
+      },
+      room: {
+        id: item.rooms?.id,
+        room_id: item.rooms?.room_id,
+        room_title: item.rooms?.room_title || "TBA",
+      },
+      section: {
+        id: item.sections?.id,
+        name: item.sections?.name || "Unknown",
+      },
+    }));
 
     return res.status(200).json({
       title: "Success",
       message: "Schedules get successfully.",
-      data: events,
+      data: schedules,
     });
   } catch (error) {
     console.error("Error fetching schedules:", error);
