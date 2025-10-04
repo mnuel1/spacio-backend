@@ -4,6 +4,7 @@ export const getFacultyQuery = `
   name,
   email,
   phone,
+  role,
   status,
   birthdate,
   gender,

@@ -71,6 +71,7 @@ const getFaculty = async (req, res) => {
         id: user.id,
         facultyId: profile.id,
         employeeId: user.user_id,
+        role: user.role || "Faculty",
         firstName,
         lastName,
         middleName,
@@ -451,6 +452,7 @@ const updateFaculty = async (req, res) => {
         name,
         email,
         phone,
+        role,
         status,
         birthdate,
         gender,
@@ -530,6 +532,7 @@ const updateFaculty = async (req, res) => {
       id: user.id,
       facultyId: profile.id, // Add teacher_profile.id as facultyId for schedule matching
       employeeId: user.user_id,
+      role: user.role || "Faculty",
       firstName: parsedName.firstName,
       lastName: parsedName.lastName,
       middleName: parsedName.middleName,
