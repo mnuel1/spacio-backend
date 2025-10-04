@@ -8,6 +8,41 @@ const combineFullName = (firstName, middleName, lastName) => {
   return [firstName, middleName, lastName].filter(Boolean).join(" ");
 };
 
+/**
+ * Parse a full name string into first, middle, and last name components
+ * Handles names with multiple words in first name (e.g., "Dan Jefferson M Millano")
+ * Assumes: "FirstName [MiddleName] LastName" format
+ * - Single word: firstName only
+ * - Two words: firstName, lastName
+ * - Three+ words: firstName, middleName, lastName (last word is lastName, second-to-last is middleName)
+ */
+const parseFullName = (fullName) => {
+  if (!fullName || typeof fullName !== "string") {
+    return { firstName: "", middleName: "", lastName: "" };
+  }
+
+  const parts = fullName.trim().split(/\s+/); // Split by whitespace
+
+  if (parts.length === 0) {
+    return { firstName: "", middleName: "", lastName: "" };
+  }
+
+  if (parts.length === 1) {
+    return { firstName: parts[0], middleName: "", lastName: "" };
+  }
+
+  if (parts.length === 2) {
+    return { firstName: parts[0], middleName: "", lastName: parts[1] };
+  }
+
+  // 3+ words: last word is lastName, second-to-last is middleName, rest is firstName
+  const lastName = parts[parts.length - 1];
+  const middleName = parts[parts.length - 2];
+  const firstName = parts.slice(0, parts.length - 2).join(" ");
+
+  return { firstName, middleName, lastName };
+};
+
 const getFaculty = async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -29,13 +64,16 @@ const getFaculty = async (req, res) => {
         ? profile.specializations.replace(/(^"|"$)/g, "").split('","')
         : [];
 
+      // Parse the full name properly
+      const { firstName, middleName, lastName } = parseFullName(user.name);
+
       return {
         id: user.id,
         facultyId: profile.id,
         employeeId: user.user_id,
-        firstName: user.name?.split(" ")[0] || "",
-        lastName: user.name?.split(" ")[1] || "",
-        middleName: "",
+        firstName,
+        lastName,
+        middleName,
         email: user.email,
         phoneNumber: user.phone,
         department: department.name || null,
@@ -485,13 +523,16 @@ const updateFaculty = async (req, res) => {
       ? profile.specializations.replace(/(^"|"$)/g, "").split('","')
       : [];
 
+    // Parse the full name properly from the stored name
+    const parsedName = parseFullName(user.name);
+
     const formattedFaculty = {
       id: user.id,
       facultyId: profile.id, // Add teacher_profile.id as facultyId for schedule matching
       employeeId: user.user_id,
-      firstName: user.name?.split(" ")[0] || "",
-      lastName: user.name?.split(" ")[1] || "",
-      middleName: "",
+      firstName: parsedName.firstName,
+      lastName: parsedName.lastName,
+      middleName: parsedName.middleName,
       email: user.email,
       phoneNumber: user.phone,
       department: department.name || null,
