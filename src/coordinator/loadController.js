@@ -20,7 +20,8 @@ const {
 
 const getLoad = async (req, res) => {
   try {
-    // Get all faculty profiles first
+    // Get all faculty profiles (including Coordinators and Deans)
+    // Anyone with a teacher_profile who has active status can be included in load management
     const { data: facultyData, error: facultyError } = await supabase
       .from("teacher_profile")
       .select(
@@ -34,7 +35,7 @@ const getLoad = async (req, res) => {
         unavail_days,
         pref_time,
         user_profile:teacher_profile_user_id_fkey (
-          id, user_id, name, email, profile_image, status
+          id, user_id, name, email, profile_image, status, role
         ),
         positions:user_roles_position_id_fkey (
           id, position, max_load, min_load
@@ -44,9 +45,21 @@ const getLoad = async (req, res) => {
         )
       `
       )
-      .not("position_id", "is", null); // exclude teachers without position_id
+      .not("position_id", "is", null)
+      .eq("user_profile.status", true); // Include all active users with teacher profiles
 
     if (facultyError) throw facultyError;
+
+    // Filter out users without position_id but log them for debugging
+    const validFacultyData = facultyData.filter((profile) => {
+      if (!profile.position_id && !profile.positions) {
+        console.warn(
+          `⚠️ Teacher profile ID ${profile.id} (${profile.user_profile?.name}) has no position assigned. Excluding from load management.`
+        );
+        return false;
+      }
+      return true;
+    });
 
     // Get all schedules separately
     const { data: scheduleData, error: scheduleError } = await supabase.from(
@@ -82,10 +95,10 @@ const getLoad = async (req, res) => {
         schedulesByTeacher[sched.teacher_id] = [];
       }
       schedulesByTeacher[sched.teacher_id].push(sched);
-    });    
-    
-    // Build result with all faculty, including those with no schedules
-    const result = facultyData.map((profile) => {
+    });
+
+    // Build result with all valid faculty (including Coordinators and Deans with positions)
+    const result = validFacultyData.map((profile) => {
       const user = profile.user_profile;
       const teacherId = profile.id;
       const teacherSchedules = schedulesByTeacher[teacherId] || [];
@@ -126,7 +139,7 @@ const getLoad = async (req, res) => {
           )}-${sched.end_time.slice(0, 5)}`,
           room: sched.rooms?.room_id,
         });
-        
+
         totalUnits += hours || 0;
         totalTeachingHours += hours;
 
@@ -151,6 +164,7 @@ const getLoad = async (req, res) => {
         lastName: user?.name?.split(" ")[1] || "",
         middleName: "", // Optional field
         email: user?.email || "",
+        role: user?.role || "Faculty", // Include role (Faculty, Coordinator, Dean)
         department: profile.departments?.name || "No Department",
         position: profile.positions?.position || "No Position",
         profileImage: user?.profile_image,
@@ -247,9 +261,10 @@ const addSubject = async (req, res) => {
       });
     }
 
-    const { current_load, positions, avail_days, pref_time, specializations } = teacherData;
+    const { current_load, positions, avail_days, pref_time, specializations } =
+      teacherData;
     const min_load = positions?.min_load || 0;
-    const { units, specialization  } = subjectData;
+    const { units, specialization } = subjectData;
 
     // Check load limit
     if (current_load + units > min_load + 12) {
@@ -276,8 +291,10 @@ const addSubject = async (req, res) => {
         message: `Teacher not set up properly. No specializations configured.`,
       });
     }
-     
-    const specList = specializations.split(",").map((s) => s.replace(/"/g, "").trim());      
+
+    const specList = specializations
+      .split(",")
+      .map((s) => s.replace(/"/g, "").trim());
     if (!specList.includes(specialization.trim())) {
       return res.status(400).json({
         title: "Failed",
@@ -285,7 +302,7 @@ const addSubject = async (req, res) => {
       });
     }
 
-    // ===== Check teacher availability (days) =====    
+    // ===== Check teacher availability (days) =====
     if (!avail_days) {
       return res.status(400).json({
         title: "Failed",
@@ -293,21 +310,26 @@ const addSubject = async (req, res) => {
       });
     }
 
-    const invalidDay = days.match(/TH|M|T|W|F|S|SU/g)?.find(
-      (d) => !avail_days.includes(d)
-    );
+    const invalidDay = days
+      .match(/TH|M|T|W|F|S|SU/g)
+      ?.find((d) => !avail_days.includes(d));
 
     if (invalidDay) {
       return res.status(400).json({
         title: "Failed",
-        message: `Teacher is not available on ${dayMap[invalidDay] || invalidDay}.`,
+        message: `Teacher is not available on ${
+          dayMap[invalidDay] || invalidDay
+        }.`,
       });
     }
 
-    // ===== Check teacher availability (time) =====    
+    // ===== Check teacher availability (time) =====
     const parseTimeToMinutes = (timeStr) => {
       if (!timeStr) return null;
-      const parts = timeStr.trim().split(":").map((p) => Number(p));
+      const parts = timeStr
+        .trim()
+        .split(":")
+        .map((p) => Number(p));
       const h = parts[0] || 0;
       const m = parts[1] || 0;
       const s = parts[2] || 0;
@@ -323,7 +345,9 @@ const addSubject = async (req, res) => {
     }
 
     // Normalize and parse preferred window
-    const [prefStartStr, prefEndStr] = pref_time.split("-").map((t) => t.trim());
+    const [prefStartStr, prefEndStr] = pref_time
+      .split("-")
+      .map((t) => t.trim());
     const prefStartMin = parseTimeToMinutes(prefStartStr);
     const prefEndMin = parseTimeToMinutes(prefEndStr);
 
@@ -344,7 +368,7 @@ const addSubject = async (req, res) => {
         message: "start_time must be before end_time.",
       });
     }
-    
+
     // Enforce both start & end inside preferred window
     if (startMin < prefStartMin || endMin > prefEndMin) {
       return res.status(400).json({
@@ -352,7 +376,7 @@ const addSubject = async (req, res) => {
         message: `Time must be within teacher's preferred time window (${prefStartStr}-${prefEndStr}).`,
       });
     }
-    
+
     const chosenDays = abbrevDays.match(/TH|M|T|W|F|S|SU/g) || [];
     const { data: roomConflict, error: roomError } = await supabase
       .from("teacher_schedules")
@@ -363,7 +387,7 @@ const addSubject = async (req, res) => {
 
     if (roomError) throw roomError;
 
-    if (roomConflict.length > 0) {      
+    if (roomConflict.length > 0) {
       const conflictDays = [
         ...new Set(roomConflict.map((c) => dayMap[c.days] || c.days)),
       ];
@@ -399,12 +423,13 @@ const addSubject = async (req, res) => {
     }
 
     // ===== Check 3: Teacher conflict (time overlap) =====
-    const { data: teacherConflict, error: teacherConflictError } = await supabase
-      .from("teacher_schedules")
-      .select("id, days, start_time, end_time")
-      .eq("teacher_id", teacher_id)
-      .in("days", chosenDays)
-      .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
+    const { data: teacherConflict, error: teacherConflictError } =
+      await supabase
+        .from("teacher_schedules")
+        .select("id, days, start_time, end_time")
+        .eq("teacher_id", teacher_id)
+        .in("days", chosenDays)
+        .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
 
     if (teacherConflictError) throw teacherConflictError;
     if (teacherConflict.length > 0) {
@@ -450,7 +475,7 @@ const addSubject = async (req, res) => {
         end_time,
         total_count,
         semester,
-        school_year: '1st Year',
+        school_year: "1st Year",
         total_duration,
       })
       .select();
@@ -487,7 +512,7 @@ const addSubject = async (req, res) => {
 const removeSubject = async (req, res) => {
   const { id } = req.params;
   console.log(id);
-  
+
   try {
     const { data, error } = await supabase
       .from("teacher_schedules")
@@ -528,7 +553,7 @@ const reassignSubject = async (req, res) => {
       updateFields.days = abbreviateDays(updateFields.days);
     }
 
-     const { data: schedule, error: schedError } = await supabase
+    const { data: schedule, error: schedError } = await supabase
       .from("teacher_schedules")
       .select("*")
       .eq("id", id)
@@ -560,7 +585,7 @@ const reassignSubject = async (req, res) => {
     }
 
     const { units, specialization } = subjectData;
-    
+
     // 3. Get new teacher details
     const { data: teacherData, error: teacherError } = await supabase
       .from("teacher_profile")
@@ -578,7 +603,7 @@ const reassignSubject = async (req, res) => {
       )
       .eq("user_id", teacher_id)
       .single();
-            
+
     if (teacherError) throw teacherError;
     if (!teacherData) {
       return res.status(404).json({
@@ -587,14 +612,17 @@ const reassignSubject = async (req, res) => {
       });
     }
 
-    const { current_load, avail_days, pref_time, specializations, positions } = teacherData;
+    const { current_load, avail_days, pref_time, specializations, positions } =
+      teacherData;
     const min_load = positions?.min_load || 0;
 
     // ===== Check 1: Load limit =====
     if (current_load + units > min_load + 12) {
       return res.status(400).json({
         title: "Failed",
-        message: `Cannot reassign subject. Adding ${units} units will exceed the allowed load (${min_load + 12}).`,
+        message: `Cannot reassign subject. Adding ${units} units will exceed the allowed load (${
+          min_load + 12
+        }).`,
       });
     }
 
@@ -606,7 +634,9 @@ const reassignSubject = async (req, res) => {
       });
     }
 
-    const specList = specializations.split(",").map((s) => s.replace(/"/g, "").trim());
+    const specList = specializations
+      .split(",")
+      .map((s) => s.replace(/"/g, "").trim());
     if (!specList.includes(specialization.trim())) {
       return res.status(400).json({
         title: "Failed",
@@ -615,7 +645,15 @@ const reassignSubject = async (req, res) => {
     }
 
     // ===== Check 3: Availability (days) =====
-    const dayMap = { M: "Monday", T: "Tuesday", W: "Wednesday", Th: "Thursday", F: "Friday", S: "Saturday", SU: "Sunday" };
+    const dayMap = {
+      M: "Monday",
+      T: "Tuesday",
+      W: "Wednesday",
+      Th: "Thursday",
+      F: "Friday",
+      S: "Saturday",
+      SU: "Sunday",
+    };
 
     if (!avail_days) {
       return res.status(400).json({
@@ -624,11 +662,15 @@ const reassignSubject = async (req, res) => {
       });
     }
 
-    const invalidDay = days.match(/TH|M|T|W|F|S|SU/g)?.find((d) => !avail_days.includes(d));
+    const invalidDay = days
+      .match(/TH|M|T|W|F|S|SU/g)
+      ?.find((d) => !avail_days.includes(d));
     if (invalidDay) {
       return res.status(400).json({
         title: "Failed",
-        message: `Teacher is not available on ${dayMap[invalidDay] || invalidDay}.`,
+        message: `Teacher is not available on ${
+          dayMap[invalidDay] || invalidDay
+        }.`,
       });
     }
 
@@ -646,7 +688,9 @@ const reassignSubject = async (req, res) => {
       });
     }
 
-    const [prefStartStr, prefEndStr] = pref_time.split("-").map((t) => t.trim());
+    const [prefStartStr, prefEndStr] = pref_time
+      .split("-")
+      .map((t) => t.trim());
     const prefStartMin = parseTimeToMinutes(prefStartStr);
     const prefEndMin = parseTimeToMinutes(prefEndStr);
     const startMin = parseTimeToMinutes(start_time);
@@ -677,10 +721,14 @@ const reassignSubject = async (req, res) => {
 
     if (conflictError) throw conflictError;
     if (teacherConflict.length > 0) {
-      const conflictDays = [...new Set(teacherConflict.map((c) => dayMap[c.days] || c.days))];
+      const conflictDays = [
+        ...new Set(teacherConflict.map((c) => dayMap[c.days] || c.days)),
+      ];
       return res.status(400).json({
         title: "Failed",
-        message: `Teacher already has another class scheduled at this time on ${conflictDays.join(", ")}.`,
+        message: `Teacher already has another class scheduled at this time on ${conflictDays.join(
+          ", "
+        )}.`,
       });
     }
     const { data, error } = await supabase
