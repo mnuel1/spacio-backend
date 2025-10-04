@@ -34,6 +34,19 @@ const scheduleOverview = async (id) => {
   let upcomingToday = [];
 
   data.map((item) => {
+    // Skip items with missing required data
+    if (
+      !item.subjects ||
+      !item.sections ||
+      !item.rooms ||
+      !item.days ||
+      !item.start_time ||
+      !item.end_time
+    ) {
+      console.warn(`⚠️ Skipping incomplete schedule item ID ${item.id}`);
+      return;
+    }
+
     const fullDays = parseAvailableDays(item.days);
     const isToday = fullDays.includes(currentDay);
 
@@ -60,12 +73,12 @@ const scheduleOverview = async (id) => {
       }
       classes.push({
         id: item.id,
-        subject: item.subjects.subject,
-        code: item.subjects.subject_code,
-        section: item.sections.name,
+        subject: item.subjects?.subject || "Unknown Subject",
+        code: item.subjects?.subject_code || "N/A",
+        section: item.sections?.name || "Unknown",
         time: `${start.format("HH:mm")} - ${end.format("HH:mm")}`,
-        room: item.rooms.room_title,
-        students: item.total_count,
+        room: item.rooms?.room_title || "TBA",
+        students: item.total_count || 0,
         status,
       });
     }
@@ -90,12 +103,12 @@ const scheduleOverview = async (id) => {
 
       allClasses.push({
         id: item.id,
-        subject: item.subjects.subject,
-        code: item.subjects.subject_code,
-        section: item.sections.name,
+        subject: item.subjects?.subject || "Unknown Subject",
+        code: item.subjects?.subject_code || "N/A",
+        section: item.sections?.name || "Unknown",
         time: `${start.format("HH:mm")} - ${end.format("HH:mm")}`,
-        room: item.rooms.room_title,
-        students: item.total_count,
+        room: item.rooms?.room_title || "TBA",
+        students: item.total_count || 0,
         date: readableDate,
         timeUntil: timeUntil,
         status: timeUntil,
@@ -129,9 +142,30 @@ const availabilityOverview = async (id) => {
     .from("teacher_profile")
     .select("avail_days, pref_time")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) throw error;
+  // If no teacher profile exists, return default empty availability
+  if (error || !data) {
+    console.warn(
+      `⚠️ No teacher profile found for ID ${id}, returning default availability`
+    );
+    const allDays = [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ];
+
+    return allDays.map((day) => ({
+      day,
+      available: false,
+      preferredTimes: [],
+      restrictedTimes: [],
+    }));
+  }
 
   const { avail_days, pref_time } = data;
   const availableDays = parseAvailableDays(avail_days); // e.g., ["Monday", "Wednesday", "Friday"]
@@ -149,7 +183,7 @@ const availabilityOverview = async (id) => {
   const dailyPreferences = allDays.map((day) => ({
     day,
     available: availableDays.includes(day),
-    preferredTimes: availableDays.includes(day) ? [pref_time] : [],
+    preferredTimes: availableDays.includes(day) && pref_time ? [pref_time] : [],
     restrictedTimes: [],
   }));
 
@@ -171,14 +205,27 @@ const loadOverview = async (id) => {
   let weeklyHours = 0;
 
   data.forEach((entry) => {
+    // Skip entries with missing required data
+    if (
+      !entry.subjects ||
+      !entry.sections ||
+      !entry.rooms ||
+      !entry.days ||
+      !entry.start_time ||
+      !entry.end_time
+    ) {
+      console.warn(`⚠️ Skipping incomplete load entry`);
+      return;
+    }
+
     const subjectId = entry.subjects.id;
 
     // Initialize subject entry
     if (!subjectMap[subjectId]) {
       subjectMap[subjectId] = {
         id: subjectId,
-        code: entry.subjects.subject_code,
-        title: entry.subjects.subject,
+        code: entry.subjects.subject_code || "N/A",
+        title: entry.subjects.subject || "Unknown Subject",
         sections: [],
         totalStudents: 0,
         weeklyHours: 0,
@@ -209,16 +256,16 @@ const loadOverview = async (id) => {
       existingSection.schedule += `, ${scheduleStr}`; // merge schedules
     } else {
       subject.sections.push({
-        id: entry.sections.name,
-        students: entry.total_count,
+        id: entry.sections.name || "Unknown",
+        students: entry.total_count || 0,
         schedule: scheduleStr,
-        room: entry.rooms.room_title,
+        room: entry.rooms.room_title || "TBA",
       });
-      subject.totalStudents += entry.total_count;
-      subject.weeklyHours += entry.subjects.units;
+      subject.totalStudents += entry.total_count || 0;
+      subject.weeklyHours += entry.subjects.units || 0;
 
-      totalStudents += entry.total_count;
-      weeklyHours += entry.subjects.units;
+      totalStudents += entry.total_count || 0;
+      weeklyHours += entry.subjects.units || 0;
       totalSections++;
     }
   });
@@ -243,11 +290,22 @@ const getDashboard = async (req, res) => {
   try {
     const { id } = req.params;
 
+    console.log("📊 Fetching dashboard data for teacher ID:", id);
+
     const [scheduleOverviewData, availabilityOverviewData, loadOverviewData] =
       await Promise.all([
-        scheduleOverview(id),
-        availabilityOverview(id),
-        loadOverview(id),
+        scheduleOverview(id).catch((err) => {
+          console.error("❌ scheduleOverview error:", err);
+          throw new Error(`Schedule overview failed: ${err.message}`);
+        }),
+        availabilityOverview(id).catch((err) => {
+          console.error("❌ availabilityOverview error:", err);
+          throw new Error(`Availability overview failed: ${err.message}`);
+        }),
+        loadOverview(id).catch((err) => {
+          console.error("❌ loadOverview error:", err);
+          throw new Error(`Load overview failed: ${err.message}`);
+        }),
       ]);
 
     const response = {
@@ -262,11 +320,12 @@ const getDashboard = async (req, res) => {
       data: response,
     });
   } catch (error) {
-    console.error("Error retrieving dashboard data:", error.message);
+    console.error("❌ Error retrieving dashboard data:", error.message);
+    console.error("❌ Full error:", error);
 
     return res.status(500).json({
       title: "Failed",
-      message: "Something went wrong!",
+      message: error.message || "Something went wrong!",
       data: null,
     });
   }
