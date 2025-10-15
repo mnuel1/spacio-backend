@@ -1,4 +1,4 @@
-export const parseAvailableDays = (abbrString) => {
+const parseAvailableDays = (abbrString) => {
   if (!abbrString) return [];
 
   const daysMap = {
@@ -28,7 +28,7 @@ export const parseAvailableDays = (abbrString) => {
   return result.map((abbr) => daysMap[abbr] || abbr);
 };
 
-export const generateDayAbbrev = (days) => {
+const generateDayAbbrev = (days) => {
   const dayAbbreviations = {
     monday: "M",
     tuesday: "T",
@@ -42,7 +42,7 @@ export const generateDayAbbrev = (days) => {
   return days.map((day) => dayAbbreviations[day.toLowerCase()] || "").join("");
 };
 
-export const generateTimeSlots = () => {
+const generateTimeSlots = () => {
   return [
     "08:00",
     "09:00",
@@ -58,7 +58,7 @@ export const generateTimeSlots = () => {
   ];
 };
 
-export const getRandomInt = (min, max) => {
+const getRandomInt = (min, max) => {
   // snap min and max to the nearest multiples of 60
   const start = Math.ceil(min / 60);
   const end = Math.floor(max / 60);
@@ -68,9 +68,9 @@ export const getRandomInt = (min, max) => {
 
   // convert back to minutes
   return randomHour * 60;
-}
+};
 
-export const toHHMM = (minutes) => {
+const toHHMM = (minutes) => {
   const h = Math.floor(minutes / 60)
     .toString()
     .padStart(2, "0");
@@ -78,24 +78,19 @@ export const toHHMM = (minutes) => {
   return `${h}:${m}`;
 };
 
-export function toMinutes(timeStr) {
+function toMinutes(timeStr) {
   const [h, m] = timeStr.split(":").map(Number);
   return h * 60 + m;
 }
 
-export function overlap(a, b) {
+function overlap(a, b) {
   return (
     toMinutes(a.start) < toMinutes(b.end) &&
     toMinutes(b.start) < toMinutes(a.end)
   );
 }
 
-export const generateTimeDaySlots = ({
-  startTime,
-  endTime,
-  slotDuration,
-  days,
-}) => {
+const generateTimeDaySlots = ({ startTime, endTime, slotDuration, days }) => {
   const slots = [];
 
   const toTimeStr = (minutes) => {
@@ -120,7 +115,7 @@ export const generateTimeDaySlots = ({
   return slots;
 };
 
-export const getRandomSection = (sections, sem, sy) => {
+const getRandomSection = (sections, sem, sy) => {
   const filtered = sections.filter(
     (sec) => sec.semester.trim() === sem.trim() && sec.year.trim() === sy.trim()
   );
@@ -130,14 +125,14 @@ export const getRandomSection = (sections, sem, sy) => {
   return filtered[Math.floor(Math.random() * filtered.length)];
 };
 
-export const isRoomAvailable = (room, day, start, end) => {
+const isRoomAvailable = (room, day, start, end) => {
   const bookings = roomBookings[day] || [];
   return !bookings.some(
     (b) => b.room.id === room.id && overlap(b, { start, end })
   );
 };
 
-export const calculateDurationInTimeFormat = (start, end) => {
+const calculateDurationInTimeFormat = (start, end) => {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
   const startMinutes = sh * 60 + sm;
@@ -153,13 +148,13 @@ export const calculateDurationInTimeFormat = (start, end) => {
   )}`;
 };
 
-export const roundToSlot = (min, max, slotSize) => {
+const roundToSlot = (min, max, slotSize) => {
   const slots = Math.floor((max - min) / slotSize); // how many slots fit
   const randomSlot = Math.floor(Math.random() * (slots + 1)); // pick slot
   return min + randomSlot * slotSize;
-}
+};
 
-export const getCurrentAcademicPeriod = async (supabase) => {
+const getCurrentAcademicPeriod = async (supabase) => {
   try {
     const { data, error } = await supabase
       .from("academic_periods")
@@ -191,7 +186,7 @@ export const getCurrentAcademicPeriod = async (supabase) => {
   }
 };
 
-export const getAcademicPeriodFilter = async (supabase) => {
+const getAcademicPeriodFilter = async (supabase) => {
   const currentPeriod = await getCurrentAcademicPeriod(supabase);
 
   // Return filter object that can be used in queries
@@ -205,7 +200,7 @@ export const getAcademicPeriodFilter = async (supabase) => {
   }
 };
 
-export const ensureAcademicPeriodId = async (supabase, data) => {
+const ensureAcademicPeriodId = async (supabase, data) => {
   const currentPeriod = await getCurrentAcademicPeriod(supabase);
 
   // If we have a current period ID, add it to the data
@@ -220,10 +215,28 @@ export const ensureAcademicPeriodId = async (supabase, data) => {
     school_year: data.school_year || currentPeriod.school_year,
   };
 };
-export const getSy = () => {
-
+const getSy = () => {
   const currentYear = new Date().getFullYear();
   const nextYear = currentYear + 1;
-  return `${currentYear}-${nextYear}`
-}
-        
+  return `${currentYear}-${nextYear}`;
+};
+
+// CommonJS exports
+module.exports = {
+  parseAvailableDays,
+  generateDayAbbrev,
+  generateTimeSlots,
+  getRandomInt,
+  toHHMM,
+  toMinutes,
+  overlap,
+  generateTimeDaySlots,
+  getRandomSection,
+  isRoomAvailable,
+  calculateDurationInTimeFormat,
+  roundToSlot,
+  getCurrentAcademicPeriod,
+  getAcademicPeriodFilter,
+  ensureAcademicPeriodId,
+  getSy,
+};
