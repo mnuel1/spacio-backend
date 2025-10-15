@@ -524,19 +524,106 @@ const addSubject = async (req, res) => {
 
 const removeSubject = async (req, res) => {
   const { id } = req.params;
-  console.log(id);
+  console.log(`🗑️ Attempting to remove schedule ID: ${id}`);
 
   try {
+    // First, get the schedule details before deleting
+    const { data: schedule, error: fetchError } = await supabase
+      .from("teacher_schedules")
+      .select(
+        `
+        id,
+        teacher_id,
+        subject_id,
+        subjects:teacher_schedules_subject_id_fkey (
+          id,
+          subject_code,
+          units
+        )
+       `
+      )
+      .eq("id", id)
+      .maybeSingle(); // Use maybeSingle() instead of single() to handle 0 or 1 rows
+
+    if (fetchError) {
+      console.error("Error fetching schedule:", fetchError);
+      return res.status(500).json({
+        title: "Failed",
+        message: "Error fetching schedule details.",
+        data: null,
+      });
+    }
+
+    if (!schedule) {
+      console.warn(
+        `⚠️ Schedule ID ${id} not found - may have been already deleted`
+      );
+      return res.status(404).json({
+        title: "Failed",
+        message: "Schedule not found. It may have already been removed.",
+        data: null,
+      });
+    }
+
+    console.log(`📋 Schedule found:`, {
+      id: schedule.id,
+      teacher_id: schedule.teacher_id,
+      subject_code: schedule.subjects?.subject_code,
+      units: schedule.subjects?.units,
+    });
+
+    // Get teacher's current load
+    const { data: teacherData, error: teacherError } = await supabase
+      .from("teacher_profile")
+      .select("id, current_load")
+      .eq("id", schedule.teacher_id)
+      .single();
+
+    if (teacherError) {
+      console.error("Error fetching teacher:", teacherError);
+      throw teacherError;
+    }
+
+    // Now delete the schedule
     const { data, error } = await supabase
       .from("teacher_schedules")
       .delete()
       .eq("id", id)
       .select();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Error deleting schedule:", error);
+      throw error;
+    }
+
+    console.log(`✅ Schedule deleted successfully`);
+
+    // Update teacher's current load (subtract the units)
+    if (teacherData && schedule.subjects?.units) {
+      const newLoad = Math.max(
+        0,
+        (teacherData.current_load || 0) - schedule.subjects.units
+      );
+
+      const { error: updateError } = await supabase
+        .from("teacher_profile")
+        .update({ current_load: newLoad })
+        .eq("id", schedule.teacher_id);
+
+      if (updateError) {
+        console.error("Error updating teacher load:", updateError);
+        // Don't throw here, deletion was successful
+      } else {
+        console.log(
+          `📊 Updated teacher load: ${teacherData.current_load} → ${newLoad}`
+        );
+      }
+    }
 
     await supabase.from("activity_logs").insert({
-      activity: `Removed subject assignment (schedule ID: ${id})`,
+      activity: `Removed subject assignment (schedule ID: ${id}, subject: ${
+        schedule.subjects?.subject_code || "N/A"
+      })`,
       by: req.body.user_id ?? null,
     });
 
