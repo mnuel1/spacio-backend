@@ -462,6 +462,17 @@ const addSubject = async (req, res) => {
     // Calculate total duration (if you have this helper)
     const total_duration = calculateDurationInTimeFormat(start_time, end_time);
 
+    // Get current academic period
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+    if (!currentPeriod || !currentPeriod.id) {
+      return res.status(400).json({
+        title: "Failed",
+        message:
+          "No active academic period found. Please set a current academic period first.",
+        data: null,
+      });
+    }
+
     // Insert subject
     const { data, error } = await supabase
       .from("teacher_schedules")
@@ -477,6 +488,8 @@ const addSubject = async (req, res) => {
         semester,
         school_year: "1st Year",
         total_duration,
+        academic_period_id: currentPeriod.id,
+        created_by: req.body.user_id || null,
       })
       .select();
 
@@ -499,11 +512,11 @@ const addSubject = async (req, res) => {
       data: data,
     });
   } catch (error) {
-    console.error("Error adding subject:", error.message);
+    console.error("Error adding subject:", error);
 
     return res.status(500).json({
       title: "Failed",
-      message: "Something went wrong!",
+      message: error.message || "Something went wrong!",
       data: null,
     });
   }
@@ -533,11 +546,11 @@ const removeSubject = async (req, res) => {
       data: data,
     });
   } catch (error) {
-    console.error("Error removing subject:", error.message);
+    console.error("Error removing subject:", error);
 
     return res.status(500).json({
       title: "Failed",
-      message: "Something went wrong!",
+      message: error.message || "Something went wrong!",
       data: null,
     });
   }
@@ -752,11 +765,11 @@ const reassignSubject = async (req, res) => {
       data: data,
     });
   } catch (error) {
-    console.error("Error reassigning subject:", error.message);
+    console.error("Error reassigning subject:", error);
 
     return res.status(500).json({
       title: "Failed",
-      message: "Something went wrong!",
+      message: error.message || "Something went wrong!",
       data: null,
     });
   }
@@ -812,22 +825,39 @@ const getRooms = async () => {
   return data;
 };
 
-const getSubjects = async () => {
-  const { data, error } = await supabase.from("subjects").select(`*`);
+const getSubjects = async (academicPeriodId) => {
+  let query = supabase.from("subjects").select(`*`);
+
+  // Filter by academic period if provided
+  if (academicPeriodId) {
+    query = query.eq("academic_period_id", academicPeriodId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("Error fetching subjects:", error.message);
     throw error;
   }
 
+  console.log(
+    `📚 Found ${data.length} subjects for academic period ${academicPeriodId}`
+  );
   return data;
 };
 
-const getSections = async () => {
-  const { data, error } = await supabase.from("sections").select(`
+const getSections = async (academicPeriodId) => {
+  let query = supabase.from("sections").select(`
       *,
       student_sections:student_sections(count)
     `);
+
+  // Filter by academic period if provided
+  if (academicPeriodId) {
+    query = query.eq("academic_period_id", academicPeriodId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("Error fetching sections:", error.message);
@@ -839,6 +869,9 @@ const getSections = async () => {
     total_count: section.student_sections[0]?.count || 0,
   }));
 
+  console.log(
+    `📖 Found ${sectionsWithCount.length} sections for academic period ${academicPeriodId}`
+  );
   return sectionsWithCount;
 };
 
@@ -846,25 +879,38 @@ const runAutoSchedule = async (req, res) => {
   try {
     const { selectedFacultyIds } = req.body || {};
 
+    // Get current academic period
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+    if (!currentPeriod || !currentPeriod.id) {
+      return res.status(400).json({
+        title: "Failed",
+        message:
+          "No active academic period found. Please set a current academic period first.",
+        data: null,
+      });
+    }
+
+    console.log(
+      `🎓 Auto-scheduling for academic period: ${currentPeriod.id} (${currentPeriod.semester} ${currentPeriod.school_year})`
+    );
+
     // If selective scheduling, only reset schedules for selected faculty
     const response =
       selectedFacultyIds && selectedFacultyIds.length > 0
-        ? await resetScheduleSelective(selectedFacultyIds)
-        : await resetSchedule();
+        ? await resetScheduleSelective(selectedFacultyIds, currentPeriod.id)
+        : await resetSchedule(currentPeriod.id);
 
     if (!response) throw "Something went wrong";
 
     const [teachers, rooms, subjects, sections] = await Promise.all([
       getTeachers(),
       getRooms(),
-      getSubjects(),
-      getSections(),
+      getSubjects(currentPeriod.id),
+      getSections(currentPeriod.id),
     ]);
 
     // Get existing schedules to avoid conflicts with non-selected faculty
-    const { data: existingSchedules, error: schedError } = await supabase.from(
-      "teacher_schedules"
-    ).select(`
+    let existingSchedulesQuery = supabase.from("teacher_schedules").select(`
         teacher_id,
         room_id,
         days,
@@ -873,13 +919,74 @@ const runAutoSchedule = async (req, res) => {
         subject_id
       `);
 
+    // Filter by current academic period
+    if (currentPeriod?.id) {
+      existingSchedulesQuery = existingSchedulesQuery.eq(
+        "academic_period_id",
+        currentPeriod.id
+      );
+    }
+
+    const { data: existingSchedules, error: schedError } =
+      await existingSchedulesQuery;
+
     if (schedError) throw schedError;
+
+    console.log(
+      `📅 Found ${existingSchedules.length} existing schedules for current period`
+    );
+
+    // Validate we have data to work with
+    if (subjects.length === 0) {
+      return res.status(400).json({
+        title: "Failed",
+        message:
+          "No subjects found for the current academic period. Please add subjects first.",
+        data: null,
+      });
+    }
+
+    if (sections.length === 0) {
+      return res.status(400).json({
+        title: "Failed",
+        message:
+          "No sections found for the current academic period. Please add sections first.",
+        data: null,
+      });
+    }
+
+    if (rooms.length === 0) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "No rooms available. Please add rooms first.",
+        data: null,
+      });
+    }
+
+    if (teachers.length === 0) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "No teachers available. Please add faculty members first.",
+        data: null,
+      });
+    }
 
     // Filter teachers if selective scheduling
     const filteredTeachers =
       selectedFacultyIds && selectedFacultyIds.length > 0
         ? teachers.filter((teacher) => selectedFacultyIds.includes(teacher.id))
         : teachers;
+
+    if (filteredTeachers.length === 0) {
+      return res.status(400).json({
+        title: "Failed",
+        message:
+          "No teachers found for scheduling. Please select valid faculty members.",
+        data: null,
+      });
+    }
+
+    console.log(`👥 Scheduling for ${filteredTeachers.length} teachers`);
 
     // Get unassigned subjects (subjects not currently scheduled)
     const assignedSubjectIds = new Set(
@@ -1277,6 +1384,7 @@ const runAutoSchedule = async (req, res) => {
             school_year: subject?.school_year || null,
             total_count: section.total_count,
             total_duration: calculateDurationInTimeFormat(cls.start, cls.end),
+            created_by: req.body.user_id || null,
           };
         }
 
@@ -1304,11 +1412,24 @@ const runAutoSchedule = async (req, res) => {
       return supabase.from("teacher_schedules").insert({
         ...entry,
         days: abbrevDays,
+        academic_period_id: currentPeriod.id,
       });
     });
 
     const insertResults = await Promise.all(insertPromises);
     const insertErrors = insertResults.filter((r) => r.error);
+
+    if (insertErrors.length > 0) {
+      console.error(
+        "❌ Errors inserting schedules:",
+        insertErrors.map((e) => e.error?.message || e.error)
+      );
+    }
+
+    const successfulInserts = insertResults.filter((r) => !r.error).length;
+    console.log(
+      `✅ Successfully inserted ${successfulInserts} schedule entries`
+    );
 
     // Only update loads for selected faculty
     const updatePromises = Object.entries(loadMap).map(
@@ -1324,6 +1445,7 @@ const runAutoSchedule = async (req, res) => {
     );
 
     await Promise.all(updatePromises);
+    console.log(`📊 Updated loads for ${Object.keys(loadMap).length} teachers`);
 
     await supabase.from("activity_logs").insert({
       activity:
@@ -1343,9 +1465,13 @@ const runAutoSchedule = async (req, res) => {
       // Don't fail the entire operation if emails fail
     }
 
+    console.log(
+      `✨ Auto-scheduling complete: ${successfulInserts} schedules created, ${unassigned.length} unassigned`
+    );
+
     return res.status(200).json({
       title: "Success",
-      message: "Schedule generated",
+      message: `Schedule generated successfully. Created ${successfulInserts} schedules with ${unassigned.length} unassigned subjects.`,
       data: { schedule, unassigned, loadMap },
     });
   } catch (error) {
@@ -1358,23 +1484,38 @@ const runAutoSchedule = async (req, res) => {
   }
 };
 
-const resetSchedule = async () => {
-  await supabase.from("teacher_schedules").delete().neq("id", 0);
+const resetSchedule = async (academicPeriodId) => {
+  // Delete schedules for the current academic period
+  if (academicPeriodId) {
+    await supabase
+      .from("teacher_schedules")
+      .delete()
+      .eq("academic_period_id", academicPeriodId);
+  } else {
+    await supabase.from("teacher_schedules").delete().neq("id", 0);
+  }
 
   await supabase
     .from("teacher_profile")
     .update({ current_load: 0 })
     .not("position_id", "is", null);
 
+  console.log(`🗑️ Reset all schedules for academic period ${academicPeriodId}`);
   return 1;
 };
 
-const resetScheduleSelective = async (selectedFacultyIds) => {
-  // Delete schedules only for selected faculty
-  await supabase
+const resetScheduleSelective = async (selectedFacultyIds, academicPeriodId) => {
+  // Delete schedules only for selected faculty in the current academic period
+  let deleteQuery = supabase
     .from("teacher_schedules")
     .delete()
     .in("teacher_id", selectedFacultyIds);
+
+  if (academicPeriodId) {
+    deleteQuery = deleteQuery.eq("academic_period_id", academicPeriodId);
+  }
+
+  await deleteQuery;
 
   // Reset current_load only for selected faculty
   await supabase
@@ -1382,6 +1523,9 @@ const resetScheduleSelective = async (selectedFacultyIds) => {
     .update({ current_load: 0 })
     .in("id", selectedFacultyIds);
 
+  console.log(
+    `🗑️ Reset schedules for ${selectedFacultyIds.length} selected faculty in academic period ${academicPeriodId}`
+  );
   return 1;
 };
 
