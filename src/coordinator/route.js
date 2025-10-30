@@ -21,6 +21,18 @@ const {
 } = require("../coordinator/scheduleController");
 
 const {
+  getArchivedSchedules,
+  getArchivedScheduleById,
+  createArchive,
+  bulkCreateArchive,
+  restoreArchive,
+  previewRestore,
+  updateArchive,
+  deleteArchive,
+  getArchiveStatistics,
+} = require("../coordinator/scheduleArchiveController");
+
+const {
   getLoad,
   addSubject,
   removeSubject,
@@ -73,6 +85,20 @@ router.post("/schedule", createSchedule);
 router.put("/schedule/:id", updateSchedule);
 router.delete("/schedule/:id", deleteSchedule);
 router.get("/schedule", getSchedule);
+
+// Schedule Archive Routes
+router.get("/schedule/archive", getArchivedSchedules);
+router.get("/schedule/archive/statistics", getArchiveStatistics);
+router.get("/schedule/archive/:id", getArchivedScheduleById);
+router.post("/schedule/archive", createArchive);
+router.post("/schedule/archive/bulk", bulkCreateArchive);
+router.put("/schedule/archive/:id", updateArchive);
+router.delete("/schedule/archive/:id", deleteArchive);
+router.post("/schedule/archive/:id/restore", restoreArchive);
+router.get(
+  "/schedule/archive/:archiveId/preview/:targetPeriodId",
+  previewRestore
+);
 
 router.post("/load/add/subject", addSubject);
 router.delete("/load/remove/subject/:id", removeSubject);
