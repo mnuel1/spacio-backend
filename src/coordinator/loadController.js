@@ -1888,7 +1888,22 @@ const checkTeachersAvailability = async (req, res) => {
 
 const sectionSchedule = async (req, res) => {
   try {
-    const { data: rows, error } = await supabase.from("teacher_schedules")
+    // Get current academic period
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+    if (!currentPeriod || !currentPeriod.id) {
+      console.warn("⚠️ No current academic period set. Returning empty section schedules.");
+      return res.status(200).json({
+        title: "Success",
+        message: "No current academic period set",
+        data: {},
+      });
+    }
+
+    console.log(
+      `📅 Fetching section schedules for academic period ${currentPeriod.id} (${currentPeriod.semester} ${currentPeriod.school_year})`
+    );
+
+    let scheduleQuery = supabase.from("teacher_schedules")
       .select(`
         id,
         teacher_id,
@@ -1902,17 +1917,27 @@ const sectionSchedule = async (req, res) => {
         school_year,
         total_count,
         total_duration,
-        teacher_profile ( id, 
+        academic_period_id,
+        teacher_profile ( id,
           user_profile:teacher_profile_user_id_fkey (
             id, user_id, name, email, profile_image, status
-          ) 
+          )
         ),
         subjects:teacher_schedules_subject_id_fkey ( id, subject_code, subject, units ),
         sections:teacher_schedules_section_id_fkey ( id, name ),
         rooms:teacher_schedules_room_id_fkey ( room_id, room_title )
       `);
 
+    // Filter by current academic period
+    scheduleQuery = scheduleQuery.eq("academic_period_id", currentPeriod.id);
+
+    const { data: rows, error } = await scheduleQuery;
+
     if (error) throw error;
+
+    console.log(
+      `📚 Retrieved ${rows.length} schedules for sections in current period`
+    );
 
     // Group schedules by section
     const scheduleBySection = {};
