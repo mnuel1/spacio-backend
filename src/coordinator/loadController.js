@@ -20,6 +20,12 @@ const {
 
 const getLoad = async (req, res) => {
   try {
+    // Get current academic period
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+    if (!currentPeriod || !currentPeriod.id) {
+      console.warn("⚠️ No current academic period set. Returning empty load data.");
+    }
+
     // Get all faculty profiles (including Coordinators and Deans)
     // Anyone with a teacher_profile who has active status can be included in load management
     const { data: facultyData, error: facultyError } = await supabase
@@ -29,7 +35,7 @@ const getLoad = async (req, res) => {
         id,
         current_load,
         contract_type,
-        specializations, 
+        specializations,
         qualifications,
         avail_days,
         unavail_days,
@@ -61,10 +67,8 @@ const getLoad = async (req, res) => {
       return true;
     });
 
-    // Get all schedules separately
-    const { data: scheduleData, error: scheduleError } = await supabase.from(
-      "teacher_schedules"
-    ).select(`
+    // Get all schedules separately - FILTERED BY CURRENT ACADEMIC PERIOD
+    let scheduleQuery = supabase.from("teacher_schedules").select(`
         id,
         teacher_id,
         days,
@@ -75,6 +79,7 @@ const getLoad = async (req, res) => {
         semester,
         school_year,
         created_at,
+        academic_period_id,
         subjects:teacher_schedules_subject_id_fkey (
           id, subject_code, subject, total_hours, units, semester, school_year
         ),
@@ -86,7 +91,18 @@ const getLoad = async (req, res) => {
         )
       `);
 
+    // Filter by current academic period
+    if (currentPeriod?.id) {
+      scheduleQuery = scheduleQuery.eq("academic_period_id", currentPeriod.id);
+    }
+
+    const { data: scheduleData, error: scheduleError } = await scheduleQuery;
+
     if (scheduleError) throw scheduleError;
+
+    console.log(
+      `📚 Retrieved ${scheduleData.length} schedules for academic period ${currentPeriod?.id} (${currentPeriod?.semester} ${currentPeriod?.school_year})`
+    );
 
     // Group schedules by teacher_id
     const schedulesByTeacher = {};
@@ -377,11 +393,25 @@ const addSubject = async (req, res) => {
       });
     }
 
+    // Get current academic period for conflict checking
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+    if (!currentPeriod || !currentPeriod.id) {
+      return res.status(400).json({
+        title: "Failed",
+        message:
+          "No active academic period found. Please set a current academic period first.",
+        data: null,
+      });
+    }
+
     const chosenDays = abbrevDays.match(/TH|M|T|W|F|S|SU/g) || [];
+
+    // ===== Check 1: Room conflict =====
     const { data: roomConflict, error: roomError } = await supabase
       .from("teacher_schedules")
       .select("id, days, start_time, end_time")
       .eq("room_id", room_id)
+      .eq("academic_period_id", currentPeriod.id)
       .in("days", chosenDays)
       .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
 
@@ -406,6 +436,7 @@ const addSubject = async (req, res) => {
       .select("id, days, start_time, end_time")
       .eq("section_id", section_id)
       .eq("subject_id", subject_id)
+      .eq("academic_period_id", currentPeriod.id)
       .in("days", chosenDays)
       .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
 
@@ -428,6 +459,7 @@ const addSubject = async (req, res) => {
         .from("teacher_schedules")
         .select("id, days, start_time, end_time")
         .eq("teacher_id", teacher_id)
+        .eq("academic_period_id", currentPeriod.id)
         .in("days", chosenDays)
         .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
 
@@ -443,12 +475,14 @@ const addSubject = async (req, res) => {
         )}.`,
       });
     }
+
     // ===== Check 4: Same section + subject same day =====
     const { data: duplicateSubject, error: dupError } = await supabase
       .from("teacher_schedules")
       .select("id")
       .eq("section_id", section_id)
       .eq("subject_id", subject_id)
+      .eq("academic_period_id", currentPeriod.id)
       .eq("days", abbrevDays);
 
     if (dupError) throw dupError;
@@ -461,17 +495,6 @@ const addSubject = async (req, res) => {
 
     // Calculate total duration (if you have this helper)
     const total_duration = calculateDurationInTimeFormat(start_time, end_time);
-
-    // Get current academic period
-    const currentPeriod = await getCurrentAcademicPeriod(supabase);
-    if (!currentPeriod || !currentPeriod.id) {
-      return res.status(400).json({
-        title: "Failed",
-        message:
-          "No active academic period found. Please set a current academic period first.",
-        data: null,
-      });
-    }
 
     // Insert subject
     const { data, error } = await supabase
@@ -809,12 +832,24 @@ const reassignSubject = async (req, res) => {
       });
     }
 
+    // Get current academic period for conflict checking
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+    if (!currentPeriod || !currentPeriod.id) {
+      return res.status(400).json({
+        title: "Failed",
+        message:
+          "No active academic period found. Please set a current academic period first.",
+        data: null,
+      });
+    }
+
     // ===== Check 5: Teacher conflict =====
     const chosenDays = days.match(/TH|M|T|W|F|S|SU/g) || [];
     const { data: teacherConflict, error: conflictError } = await supabase
       .from("teacher_schedules")
       .select("id, days, start_time, end_time")
       .eq("teacher_id", teacher_id)
+      .eq("academic_period_id", currentPeriod.id)
       .in("days", chosenDays)
       .neq("id", id) // exclude current schedule
       .or(`and(start_time.lt.${end_time},end_time.gt.${start_time})`);
