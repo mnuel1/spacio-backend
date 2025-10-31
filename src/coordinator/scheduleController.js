@@ -538,26 +538,18 @@ const deleteSchedule = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("teacher_schedules")
       .delete()
       .eq("id", id);
 
     if (error) throw error;
 
-    if (data.length === 0) {
-      return res.status(404).json({
-        title: "Not Found",
-        message: "Schedule not found.",
-        data: null,
-      });
-    }
-    
     await supabase.from("activity_logs").insert({
       activity: `Deleted schedule ${id}`,
       by: req.body.user_id ?? null
     });
-    
+
     return res.status(200).json({
       title: "Success",
       message: "Schedule deleted successfully.",
