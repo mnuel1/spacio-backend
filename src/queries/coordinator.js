@@ -77,6 +77,7 @@ export const getSchedulesQuery = `
   created_at,
   teacher_schedules (
     id,
+    academic_period_id,
     subjects:teacher_schedules_subject_id_fkey (
       id, subject_code, subject, total_hours, units, semester, school_year
     ),

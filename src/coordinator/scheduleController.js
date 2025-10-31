@@ -1,6 +1,6 @@
 const supabase = require('../supabase');
 const getSchedulesQuery = require('../queries/coordinator').getSchedulesQuery;
-const { ensureAcademicPeriodId } = require("../utils");
+const { ensureAcademicPeriodId, getCurrentAcademicPeriod } = require("../utils");
 
 const dayAbbreviations = {
   Monday: "M",
@@ -76,18 +76,48 @@ const transformSchedule = (teacher) => {
 
 const getSchedule = async (req, res) => {
   try {
+    // Get current academic period
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+    if (!currentPeriod || !currentPeriod.id) {
+      console.warn("⚠️ No current academic period set. Returning empty schedules.");
+    }
+
     const { data, error } = await supabase
       .from("teacher_profile")
       .select(getSchedulesQuery);
 
     if (error) throw error;
 
+    console.log(
+      `📅 Fetched teacher profiles for academic period ${currentPeriod?.id} (${currentPeriod?.semester} ${currentPeriod?.school_year})`
+    );
+
+    // Filter schedules by current academic period
+    const filteredData = data.map((teacher) => ({
+      ...teacher,
+      teacher_schedules: (teacher.teacher_schedules || []).filter(
+        (schedule) =>
+          currentPeriod?.id &&
+          schedule.academic_period_id === currentPeriod.id
+      ),
+    }));
+
     const transformSchedules = (data = []) => data.map(transformSchedule);
+
+    const transformedData = transformSchedules(filteredData);
+    const totalSchedules = transformedData.reduce(
+      (sum, teacher) => sum + teacher.schedules.length,
+      0
+    );
+
+    console.log(
+      `📚 Retrieved ${totalSchedules} schedules across ${transformedData.length} teachers`
+    );
 
     return res.status(200).json({
       title: "Success",
       message: "Schedules retrieved successfully.",
-      data: transformSchedules(data), // ✅ pass the data here
+      data: transformedData,
     });
   } catch (error) {
     console.error("Error retrieving schedules:", error.message);

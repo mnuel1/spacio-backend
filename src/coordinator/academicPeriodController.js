@@ -105,6 +105,8 @@ const setCurrentPeriod = async (req, res) => {
   try {
     const { id } = req.params;
 
+    console.log(`🔄 Switching to academic period ${id}...`);
+
     // First, unset all current periods
     await supabase
       .from("academic_periods")
@@ -112,7 +114,7 @@ const setCurrentPeriod = async (req, res) => {
       .neq("id", 0);
 
     // Then set the specified period as current
-    const { data, error } = await supabase
+    const { data: newPeriod, error } = await supabase
       .from("academic_periods")
       .update({ is_current: true, status: "Active" })
       .eq("id", id)
@@ -121,10 +123,17 @@ const setCurrentPeriod = async (req, res) => {
 
     if (error) throw error;
 
+    console.log(
+      `✅ Switched to ${newPeriod.semester} Semester ${newPeriod.school_year}`
+    );
+    console.log(
+      `📋 Note: Faculty loads will be calculated dynamically from this period's schedules`
+    );
+
     return res.status(200).json({
       title: "Success",
       message: "Current academic period updated successfully",
-      data,
+      data: newPeriod,
     });
   } catch (error) {
     console.error("Error setting current academic period:", error.message);
