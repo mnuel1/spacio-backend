@@ -57,6 +57,34 @@ const deactivateUser = async (req, res) => {
   }
 };
 
+const reactivateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data, error } = await supabase
+      .from("user_profile")
+      .update({ status: true })
+      .eq("id", id)
+      .select();
+
+    if (error) throw error;
+
+    return res.status(200).json({
+      title: "Success",
+      message: "User reactivated successfully.",
+      data: data,
+    });
+  } catch (error) {
+    console.error("Error reactivating user:", error.message);
+
+    return res.status(500).json({
+      title: "Failed",
+      message: "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -195,6 +223,7 @@ const addUsersByFile = async (req, res) => {
 module.exports = {
   getUsers,
   deactivateUser,
+  reactivateUser,
   deleteUser,
   addUsersByFile,
 };

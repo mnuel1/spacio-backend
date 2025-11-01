@@ -49,6 +49,7 @@ const {
 const {
   getUsers,
   deactivateUser,
+  reactivateUser,
   deleteUser,
   addUsersByFile,
 } = require("../coordinator/userController");
@@ -124,6 +125,7 @@ const upload = multer({ storage });
 router.post("/users/signup", upload.single("file"), addUsersByFile);
 router.get("/users", getUsers);
 router.put("/users/deactivate/:id", deactivateUser);
+router.put("/users/reactivate/:id", reactivateUser);
 router.delete("/users/:id", deleteUser);
 
 router.get("/dashboard", getDashboard);
