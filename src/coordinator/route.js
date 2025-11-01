@@ -42,6 +42,8 @@ const {
   updateConflict,
   checkTeachersAvailability,
   sectionSchedule,
+  addOtherWorkload,
+  getAssignmentRecommendations,
 } = require("../coordinator/loadController");
 
 const {
@@ -101,9 +103,11 @@ router.get(
 );
 
 router.post("/load/add/subject", addSubject);
+router.post("/load/add/other-workload", addOtherWorkload);
 router.delete("/load/remove/subject/:id", removeSubject);
 router.put("/load/reassign/subject/:id", reassignSubject);
 router.get("/load", getLoad);
+router.get("/load/recommendations/:teacherId", getAssignmentRecommendations);
 
 router.get("/conflicts", getConflicts);
 router.put("/conflicts/:id", updateConflict);

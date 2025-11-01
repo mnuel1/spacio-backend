@@ -23,7 +23,9 @@ const getLoad = async (req, res) => {
     // Get current academic period
     const currentPeriod = await getCurrentAcademicPeriod(supabase);
     if (!currentPeriod || !currentPeriod.id) {
-      console.warn("⚠️ No current academic period set. Returning empty load data.");
+      console.warn(
+        "⚠️ No current academic period set. Returning empty load data."
+      );
     }
 
     // Get all faculty profiles (including Coordinators and Deans)
@@ -80,6 +82,12 @@ const getLoad = async (req, res) => {
         school_year,
         created_at,
         academic_period_id,
+        workload_type,
+        workload_description,
+        is_excess_load,
+        excess_load_hours,
+        other_workload_particulars,
+        other_workload_hours,
         subjects:teacher_schedules_subject_id_fkey (
           id, subject_code, subject, total_hours, units, semester, school_year
         ),
@@ -154,6 +162,13 @@ const getLoad = async (req, res) => {
             5
           )}-${sched.end_time.slice(0, 5)}`,
           room: sched.rooms?.room_id,
+          // New workload fields
+          workloadType: sched.workload_type || "teaching",
+          workloadDescription: sched.workload_description,
+          isExcessLoad: sched.is_excess_load || false,
+          excessLoadHours: sched.excess_load_hours,
+          otherWorkloadParticulars: sched.other_workload_particulars,
+          otherWorkloadHours: sched.other_workload_hours,
         });
 
         totalUnits += hours || 0;
@@ -235,6 +250,10 @@ const addSubject = async (req, res) => {
       total_count,
       semester,
       school_year,
+      workload_type,
+      workload_description,
+      other_workload_particulars,
+      other_workload_hours,
     } = req.body;
 
     // Get teacher + min_load from position
@@ -496,6 +515,13 @@ const addSubject = async (req, res) => {
     // Calculate total duration (if you have this helper)
     const total_duration = calculateDurationInTimeFormat(start_time, end_time);
 
+    // Calculate if this is excess load
+    const maxLoad = min_load + 12;
+    const isExcessLoad = current_load + units > maxLoad;
+    const excessLoadHours = isExcessLoad
+      ? Math.min(units, current_load + units - maxLoad)
+      : null;
+
     // Insert subject
     const { data, error } = await supabase
       .from("teacher_schedules")
@@ -513,6 +539,13 @@ const addSubject = async (req, res) => {
         total_duration,
         academic_period_id: currentPeriod.id,
         created_by: req.body.user_id || null,
+        // New workload fields
+        workload_type: workload_type || "teaching",
+        workload_description,
+        is_excess_load: isExcessLoad,
+        excess_load_hours: excessLoadHours,
+        other_workload_particulars,
+        other_workload_hours,
       })
       .select();
 
@@ -1891,7 +1924,9 @@ const sectionSchedule = async (req, res) => {
     // Get current academic period
     const currentPeriod = await getCurrentAcademicPeriod(supabase);
     if (!currentPeriod || !currentPeriod.id) {
-      console.warn("⚠️ No current academic period set. Returning empty section schedules.");
+      console.warn(
+        "⚠️ No current academic period set. Returning empty section schedules."
+      );
       return res.status(200).json({
         title: "Success",
         message: "No current academic period set",
@@ -1903,8 +1938,7 @@ const sectionSchedule = async (req, res) => {
       `📅 Fetching section schedules for academic period ${currentPeriod.id} (${currentPeriod.semester} ${currentPeriod.school_year})`
     );
 
-    let scheduleQuery = supabase.from("teacher_schedules")
-      .select(`
+    let scheduleQuery = supabase.from("teacher_schedules").select(`
         id,
         teacher_id,
         subject_id,
@@ -1918,12 +1952,18 @@ const sectionSchedule = async (req, res) => {
         total_count,
         total_duration,
         academic_period_id,
+        workload_type,
+        workload_description,
+        is_excess_load,
+        excess_load_hours,
+        other_workload_particulars,
+        other_workload_hours,
         teacher_profile ( id,
           user_profile:teacher_profile_user_id_fkey (
             id, user_id, name, email, profile_image, status
           )
         ),
-        subjects:teacher_schedules_subject_id_fkey ( id, subject_code, subject, units ),
+        subjects:teacher_schedules_subject_id_fkey ( id, subject_code, subject, units, lec_hours, lab_hours ),
         sections:teacher_schedules_section_id_fkey ( id, name ),
         rooms:teacher_schedules_room_id_fkey ( room_id, room_title )
       `);
@@ -1977,6 +2017,15 @@ const sectionSchedule = async (req, res) => {
           room_id: row.rooms?.room_id,
           room_type: row.rooms?.type,
           units: row.subjects.units,
+          lec_hours: row.subjects?.lec_hours || 0,
+          lab_hours: row.subjects?.lab_hours || 0,
+          // New workload fields
+          workloadType: row.workload_type || "teaching",
+          workloadDescription: row.workload_description,
+          isExcessLoad: row.is_excess_load || false,
+          excessLoadHours: row.excess_load_hours,
+          otherWorkloadParticulars: row.other_workload_particulars,
+          otherWorkloadHours: row.other_workload_hours,
         });
       });
     });
@@ -2014,6 +2063,301 @@ const abbreviateDays = (days) => {
     .join("");
 };
 
+const getAssignmentRecommendations = async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { selectedDays, startTime, endTime, subjectId } = req.query;
+
+    // Get teacher details with position and preferences
+    const { data: teacherData, error: teacherError } = await supabase
+      .from("teacher_profile")
+      .select(`
+        id,
+        current_load,
+        avail_days,
+        unavail_days,
+        pref_time,
+        specializations,
+        qualifications,
+        user_profile:teacher_profile_user_id_fkey (
+          name
+        ),
+        positions:user_roles_position_id_fkey (
+          position,
+          max_load,
+          min_load
+        )
+      `)
+      .eq("id", teacherId)
+      .single();
+
+    if (teacherError) throw teacherError;
+    if (!teacherData) {
+      return res.status(404).json({
+        title: "Failed",
+        message: "Teacher not found.",
+      });
+    }
+
+    const maxLoad = (teacherData.positions?.min_load || 0) + 12;
+    const currentLoad = teacherData.current_load || 0;
+    const availableLoad = maxLoad - currentLoad;
+
+    // Parse teacher preferences
+    const availableDays = parseAvailableDays(teacherData.avail_days || "");
+    const unavailableDays = parseAvailableDays(teacherData.unavail_days || "");
+    const specializations = teacherData.specializations
+      ? teacherData.specializations.split(",").map((s) => s.replace(/"/g, "").trim())
+      : [];
+
+    // Parse preferred time
+    let preferredTimeStart = null;
+    let preferredTimeEnd = null;
+    if (teacherData.pref_time) {
+      const [start, end] = teacherData.pref_time.split("-").map((t) => t.trim());
+      preferredTimeStart = start;
+      preferredTimeEnd = end;
+    }
+
+    // Get current academic period
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+
+    // Check for time conflicts if time range is provided
+    let hasTimeConflict = false;
+    let conflictDetails = null;
+    if (selectedDays && startTime && endTime && currentPeriod?.id) {
+      const daysArray = selectedDays.split(",");
+      const { data: conflicts } = await supabase
+        .from("teacher_schedules")
+        .select("id, days, start_time, end_time, subjects:teacher_schedules_subject_id_fkey(subject_code)")
+        .eq("teacher_id", teacherId)
+        .eq("academic_period_id", currentPeriod.id)
+        .in("days", daysArray)
+        .or(`and(start_time.lt.${endTime},end_time.gt.${startTime})`);
+
+      if (conflicts && conflicts.length > 0) {
+        hasTimeConflict = true;
+        conflictDetails = conflicts;
+      }
+    }
+
+    // Get available rooms for the time slot
+    let availableRooms = [];
+    if (selectedDays && startTime && endTime && currentPeriod?.id) {
+      const { data: allRooms } = await supabase.from("room").select("*");
+      const daysArray = selectedDays.split(",");
+
+      // Get booked rooms for this time slot
+      const { data: bookedRooms } = await supabase
+        .from("teacher_schedules")
+        .select("room_id")
+        .eq("academic_period_id", currentPeriod.id)
+        .in("days", daysArray)
+        .or(`and(start_time.lt.${endTime},end_time.gt.${startTime})`);
+
+      const bookedRoomIds = new Set(bookedRooms?.map((r) => r.room_id) || []);
+      availableRooms = allRooms?.filter((room) => !bookedRoomIds.has(room.id)) || [];
+    }
+
+    // Get recommended subjects based on specialization
+    let recommendedSubjects = [];
+    if (subjectId) {
+      const { data: subject } = await supabase
+        .from("subjects")
+        .select("*")
+        .eq("id", subjectId)
+        .single();
+
+      if (subject) {
+        const isRecommended = specializations.includes(subject.specialization?.trim());
+        recommendedSubjects = [{ ...subject, isRecommended }];
+      }
+    } else {
+      const { data: allSubjects } = await supabase
+        .from("subjects")
+        .select("*")
+        .eq("academic_period_id", currentPeriod?.id || 0);
+
+      recommendedSubjects = allSubjects?.map((subject) => ({
+        ...subject,
+        isRecommended: specializations.includes(subject.specialization?.trim()),
+      })) || [];
+    }
+
+    // Calculate recommendations
+    const recommendations = {
+      teacher: {
+        id: teacherData.id,
+        name: teacherData.user_profile?.name,
+        currentLoad,
+        maxLoad,
+        availableLoad,
+        loadPercentage: Math.round((currentLoad / maxLoad) * 100),
+        isNearMaxLoad: currentLoad >= maxLoad * 0.8,
+        willExceedLoad: (units) => currentLoad + units > maxLoad,
+      },
+      schedule: {
+        availableDays: availableDays.map((day) => ({
+          day,
+          isAvailable: true,
+          isPreferred: true,
+        })),
+        unavailableDays: unavailableDays.map((day) => ({
+          day,
+          isAvailable: false,
+          isPreferred: false,
+        })),
+        preferredTime: {
+          start: preferredTimeStart,
+          end: preferredTimeEnd,
+          isWithinRange: (start, end) => {
+            if (!preferredTimeStart || !preferredTimeEnd) return true;
+            return start >= preferredTimeStart && end <= preferredTimeEnd;
+          },
+        },
+        hasTimeConflict,
+        conflictDetails,
+      },
+      subjects: {
+        specializations,
+        recommended: recommendedSubjects.filter((s) => s.isRecommended),
+        all: recommendedSubjects,
+      },
+      rooms: {
+        available: availableRooms,
+        total: availableRooms.length,
+      },
+      warnings: []
+    };
+
+    // Add warnings
+    if (teacherData.current_load >= maxLoad * 0.8) {
+      recommendations.warnings.push({
+        type: "load",
+        severity: "warning",
+        message: `Teacher is at ${recommendations.teacher.loadPercentage}% capacity`,
+      });
+    }
+
+    if (hasTimeConflict) {
+      recommendations.warnings.push({
+        type: "conflict",
+        severity: "error",
+        message: "Time slot conflicts with existing schedule",
+      });
+    }
+
+    if (!teacherData.avail_days) {
+      recommendations.warnings.push({
+        type: "availability",
+        severity: "warning",
+        message: "Teacher has no available days configured",
+      });
+    }
+
+    if (!teacherData.pref_time) {
+      recommendations.warnings.push({
+        type: "time",
+        severity: "warning",
+        message: "Teacher has no preferred time configured",
+      });
+    }
+
+    return res.status(200).json({
+      title: "Success",
+      message: "Recommendations retrieved successfully.",
+      data: recommendations,
+    });
+  } catch (error) {
+    console.error("Error getting recommendations:", error);
+    return res.status(500).json({
+      title: "Failed",
+      message: error.message || "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
+const addOtherWorkload = async (req, res) => {
+  try {
+    const {
+      teacher_id,
+      workload_type, // 'administrative', 'research', 'other'
+      workload_description, // e.g., "Department Head Duties"
+      other_workload_particulars, // Details
+      days,
+      start_time,
+      end_time,
+      other_workload_hours,
+    } = req.body;
+
+    // Validate workload_type
+    const validTypes = ['administrative', 'research', 'other'];
+    if (!validTypes.includes(workload_type)) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "Invalid workload type. Must be 'administrative', 'research', or 'other'.",
+      });
+    }
+
+    // Get current academic period
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+    if (!currentPeriod || !currentPeriod.id) {
+      return res.status(400).json({
+        title: "Failed",
+        message: "No active academic period found.",
+      });
+    }
+
+    const abbrevDays = abbreviateDays(days);
+    const total_duration = calculateDurationInTimeFormat(start_time, end_time);
+
+    // Insert other workload entry
+    const { data, error } = await supabase
+      .from("teacher_schedules")
+      .insert({
+        teacher_id,
+        subject_id: null, // No subject for other workload
+        section_id: null,
+        room_id: null,
+        days: abbrevDays,
+        start_time,
+        end_time,
+        total_duration,
+        semester: currentPeriod.semester,
+        school_year: currentPeriod.school_year,
+        academic_period_id: currentPeriod.id,
+        workload_type,
+        workload_description,
+        other_workload_particulars,
+        other_workload_hours,
+        is_excess_load: false,
+        created_by: req.body.user_id || null,
+      })
+      .select();
+
+    if (error) throw error;
+
+    await supabase.from("activity_logs").insert({
+      activity: `Added ${workload_type} workload for teacher ${teacher_id}: ${other_workload_particulars}`,
+      by: req.body.user_id ?? null,
+    });
+
+    return res.status(201).json({
+      title: "Success",
+      message: "Other workload added successfully.",
+      data: data,
+    });
+  } catch (error) {
+    console.error("Error adding other workload:", error);
+    return res.status(500).json({
+      title: "Failed",
+      message: error.message || "Something went wrong!",
+      data: null,
+    });
+  }
+};
+
 module.exports = {
   getLoad,
   addSubject,
@@ -2024,4 +2368,6 @@ module.exports = {
   updateConflict,
   checkTeachersAvailability,
   sectionSchedule,
+  addOtherWorkload,
+  getAssignmentRecommendations,
 };
