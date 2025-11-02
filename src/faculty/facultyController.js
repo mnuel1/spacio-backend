@@ -333,12 +333,37 @@ const getDashboard = async (req, res) => {
 
 const getMySchedules = async (req, res) => {
   const { id } = req.params;
+  const { semester, school_year } = req.query;
 
   try {
-    const { data, error } = await supabase
+    // Get current academic period if no parameters provided
+    let academicPeriodId = null;
+    if (semester && school_year) {
+      const { data: periodData } = await supabase
+        .from("academic_periods")
+        .select("id")
+        .eq("semester", semester)
+        .eq("school_year", school_year)
+        .eq("is_current", true)
+        .maybeSingle();
+
+      academicPeriodId = periodData?.id;
+    } else {
+      const currentPeriod = await getCurrentAcademicPeriod(supabase);
+      academicPeriodId = currentPeriod?.id;
+    }
+
+    let query = supabase
       .from("teacher_schedules")
       .select(getMySchedulesQuery)
       .eq("teacher_id", id);
+
+    // Filter by academic period if available
+    if (academicPeriodId) {
+      query = query.eq("academic_period_id", academicPeriodId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw error;
@@ -396,12 +421,37 @@ const getMySchedules = async (req, res) => {
 
 const getMyLoad = async (req, res) => {
   const { id } = req.params;
+  const { semester, school_year } = req.query;
 
   try {
-    const { data, error } = await supabase
+    // Get current academic period if no parameters provided
+    let academicPeriodId = null;
+    if (semester && school_year) {
+      const { data: periodData } = await supabase
+        .from("academic_periods")
+        .select("id")
+        .eq("semester", semester)
+        .eq("school_year", school_year)
+        .eq("is_current", true)
+        .maybeSingle();
+
+      academicPeriodId = periodData?.id;
+    } else {
+      const currentPeriod = await getCurrentAcademicPeriod(supabase);
+      academicPeriodId = currentPeriod?.id;
+    }
+
+    let query = supabase
       .from("teacher_schedules")
       .select(getMyLoadQuery)
       .eq("teacher_id", id);
+
+    // Filter by academic period if available
+    if (academicPeriodId) {
+      query = query.eq("academic_period_id", academicPeriodId);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 

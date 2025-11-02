@@ -1,4 +1,5 @@
 const supabase = require("../supabase");
+const { getCurrentAcademicPeriod } = require("../utils");
 
 const recordLog = async (body) => {
   try {
@@ -85,7 +86,24 @@ const getLogs = async (req, res) => {
 
 const getSchedule = async (req, res) => {
   try {
-    const { data: rows, error } = await supabase
+    // Get current academic period
+    const currentPeriod = await getCurrentAcademicPeriod(supabase);
+    if (!currentPeriod || !currentPeriod.id) {
+      console.warn(
+        "⚠️ No current academic period set. Returning empty schedule data."
+      );
+      return res.status(200).json({
+        title: "Success",
+        message: "No current academic period set",
+        data: {},
+      });
+    }
+
+    console.log(
+      `📅 Fetching dean schedules for academic period ${currentPeriod.id} (${currentPeriod.semester} ${currentPeriod.school_year})`
+    );
+
+    let query = supabase
       .from("teacher_schedules")
       .select(
         `
@@ -101,10 +119,11 @@ const getSchedule = async (req, res) => {
         school_year,
         total_count,
         total_duration,
-        teacher_profile ( id, 
+        academic_period_id,
+        teacher_profile ( id,
           user_profile:teacher_profile_user_id_fkey (
             id, user_id, name, email, profile_image, status
-          ) 
+          )
         ),
         subjects:teacher_schedules_subject_id_fkey ( id, subject_code, subject ),
         sections:teacher_schedules_section_id_fkey ( id, name ),
@@ -112,7 +131,18 @@ const getSchedule = async (req, res) => {
       `
       );
 
+    // Filter by current academic period
+    if (currentPeriod?.id) {
+      query = query.eq("academic_period_id", currentPeriod.id);
+    }
+
+    const { data: rows, error } = await query;
+
     if (error) throw error;
+
+    console.log(
+      `📚 Retrieved ${rows.length} schedules for dean view in current period`
+    );
 
     // 2. Rebuild into your expected `schedule` shape
     const schedule = {};
