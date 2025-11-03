@@ -17,6 +17,11 @@ const {
   ensureAcademicPeriodId,
   getSy,
 } = require("../utils.js");
+const {
+  getTeacherSubjects,
+  getTeacherSubjectIds,
+  canTeacherTeachSubject,
+} = require("../services/teacherSubjectService.js");
 
 const getLoad = async (req, res) => {
   try {
@@ -121,13 +126,38 @@ const getLoad = async (req, res) => {
       schedulesByTeacher[sched.teacher_id].push(sched);
     });
 
+    // Fetch teacher subjects for all teachers in batch
+    const teacherSubjectsMap = {};
+    await Promise.all(
+      validFacultyData.map(async (profile) => {
+        try {
+          const subjects = await getTeacherSubjects(profile.id);
+          teacherSubjectsMap[profile.id] = subjects;
+        } catch (error) {
+          console.error(`Error fetching subjects for teacher ${profile.id}:`, error);
+          teacherSubjectsMap[profile.id] = [];
+        }
+      })
+    );
+
     // Build result with all valid faculty (including Coordinators and Deans with positions)
     const result = validFacultyData.map((profile) => {
       const user = profile.user_profile;
       const teacherId = profile.id;
       const teacherSchedules = schedulesByTeacher[teacherId] || [];
 
-      const specializations = profile.specializations
+      // Get subjects from the new teacher_subjects table
+      const teacherSubjects = teacherSubjectsMap[teacherId] || [];
+      const specializations = [...new Set(teacherSubjects.map(s => s.specialization))].filter(Boolean);
+      const canTeachSubjects = teacherSubjects.map(s => ({
+        id: s.id,
+        code: s.subject_code,
+        name: s.subject,
+        proficiency: s.proficiency_level
+      }));
+
+      // Legacy fallback for unmigrated teachers
+      const legacySpecializations = profile.specializations
         ? profile.specializations.replace(/(^"|"$)/g, "").split('", "')
         : [];
 
@@ -214,8 +244,10 @@ const getLoad = async (req, res) => {
         unavailableDays: parseAvailableDays(profile.unavail_days || ""),
         contractType: profile.contract_type,
         employmentStatus: user?.status ? "Active" : "Inactive",
-        specializations,
-        canTeachSubjects: qualifications,
+        specializations: specializations.length > 0 ? specializations : legacySpecializations,
+        canTeachSubjects: canTeachSubjects.length > 0 ? canTeachSubjects : qualifications,
+        teacherSubjects: canTeachSubjects, // New field with full subject details
+        usesSubjectReferences: canTeachSubjects.length > 0,
         yearsOfExperience: 8, // placeholder
         lastAssignmentDate: lastAssignmentDate || new Date().toISOString(),
         current_load: currentLoad,
@@ -320,21 +352,27 @@ const addSubject = async (req, res) => {
       F: "Friday",
     };
 
-    if (!specializations) {
-      return res.status(400).json({
-        title: "Failed",
-        message: `Teacher not set up properly. No specializations configured.`,
-      });
-    }
+    // Check if teacher can teach this subject (using new subject-based system)
+    const canTeach = await canTeacherTeachSubject(teacher_id, subject_id);
 
-    const specList = specializations
-      .split(",")
-      .map((s) => s.replace(/"/g, "").trim());
-    if (!specList.includes(specialization.trim())) {
-      return res.status(400).json({
-        title: "Failed",
-        message: `Teacher is not specialized to teach this subject (${specialization}).`,
-      });
+    if (!canTeach) {
+      // Fallback to legacy specialization check
+      if (!specializations) {
+        return res.status(400).json({
+          title: "Failed",
+          message: `Teacher is not qualified to teach this subject. Please assign subjects to this teacher first.`,
+        });
+      }
+
+      const specList = specializations
+        .split(",")
+        .map((s) => s.replace(/"/g, "").trim());
+      if (!specList.includes(specialization.trim())) {
+        return res.status(400).json({
+          title: "Failed",
+          message: `Teacher is not qualified to teach this subject (${specialization}).`,
+        });
+      }
     }
 
     // ===== Check teacher availability (days) =====
@@ -782,22 +820,27 @@ const reassignSubject = async (req, res) => {
       });
     }
 
-    // ===== Check 2: Specialization =====
-    if (!specializations) {
-      return res.status(400).json({
-        title: "Failed",
-        message: "Teacher not set up properly. No specializations configured.",
-      });
-    }
+    // ===== Check 2: Subject qualification (using new subject-based system) =====
+    const canTeach = await canTeacherTeachSubject(teacherData.id, subject_id);
 
-    const specList = specializations
-      .split(",")
-      .map((s) => s.replace(/"/g, "").trim());
-    if (!specList.includes(specialization.trim())) {
-      return res.status(400).json({
-        title: "Failed",
-        message: `Teacher is not specialized to teach this subject (${specialization}).`,
-      });
+    if (!canTeach) {
+      // Fallback to legacy specialization check
+      if (!specializations) {
+        return res.status(400).json({
+          title: "Failed",
+          message: "Teacher is not qualified to teach this subject. Please assign subjects to this teacher first.",
+        });
+      }
+
+      const specList = specializations
+        .split(",")
+        .map((s) => s.replace(/"/g, "").trim());
+      if (!specList.includes(specialization.trim())) {
+        return res.status(400).json({
+          title: "Failed",
+          message: `Teacher is not qualified to teach this subject (${specialization}).`,
+        });
+      }
     }
 
     // ===== Check 3: Availability (days) =====
@@ -1191,6 +1234,20 @@ const runAutoSchedule = async (req, res) => {
       });
     });
 
+    // Fetch subject IDs for all teachers in batch
+    const teacherSubjectIdsMap = {};
+    await Promise.all(
+      filteredTeachers.map(async (teacher) => {
+        try {
+          const subjectIds = await getTeacherSubjectIds(teacher.id);
+          teacherSubjectIdsMap[teacher.id] = subjectIds;
+        } catch (error) {
+          console.error(`Error fetching subject IDs for teacher ${teacher.id}:`, error);
+          teacherSubjectIdsMap[teacher.id] = [];
+        }
+      })
+    );
+
     const instructors = filteredTeachers.map((teacher) => {
       const fullName = teacher.user_profile?.name || "No name";
       const maxLoad = teacher.positions?.min_load;
@@ -1201,6 +1258,11 @@ const runAutoSchedule = async (req, res) => {
         const [start, end] = teacher.pref_time.split("-").map((t) => t.trim());
         timePref = { start, end };
       }
+
+      // Use new subject-based system
+      const teacherSubjectIds = teacherSubjectIdsMap[teacher.id] || [];
+
+      // Legacy fallback
       const specializations = teacher.specializations
         ? teacher.specializations
             .split(",")
@@ -1216,7 +1278,8 @@ const runAutoSchedule = async (req, res) => {
           ? availDays
           : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
         timePref,
-        specializations,
+        subjectIds: teacherSubjectIds, // New: array of subject IDs teacher can teach
+        specializations, // Legacy: keep for backward compatibility
       };
     });
 
@@ -1375,10 +1438,13 @@ const runAutoSchedule = async (req, res) => {
                 continue;
               }
 
-              // 2. Check specialization
-              if (
-                !instructor.specializations.includes(subject.specialization)
-              ) {
+              // 2. Check if instructor can teach this subject (new subject-based system)
+              const canTeachSubject = instructor.subjectIds.includes(subject.id);
+
+              // Fallback to legacy specialization check if no subject assignments
+              const canTeachBySpecialization = instructor.specializations.includes(subject.specialization);
+
+              if (!canTeachSubject && !canTeachBySpecialization) {
                 continue;
               }
 

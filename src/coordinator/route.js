@@ -47,6 +47,18 @@ const {
 } = require("../coordinator/loadController");
 
 const {
+  getTeacherSubjectsHandler,
+  assignTeacherSubjectsHandler,
+  removeTeacherSubjectHandler,
+  clearTeacherSubjectsHandler,
+  getTeachersForSubjectHandler,
+} = require("../coordinator/teacherSubjectController");
+
+const {
+  getSubjects,
+} = require("../coordinator/subjectsController");
+
+const {
   getUsers,
   deactivateUser,
   reactivateUser,
@@ -114,6 +126,16 @@ router.get("/conflicts", getConflicts);
 router.put("/conflicts/:id", updateConflict);
 
 router.get("/teachers/availability/check", checkTeachersAvailability);
+
+// Subjects Routes
+router.get("/subjects", getSubjects);
+router.get("/subjects/:subjectId/teachers", getTeachersForSubjectHandler);
+
+// Teacher Subjects Management Routes (New subject-based system)
+router.get("/teachers/:teacherId/subjects", getTeacherSubjectsHandler);
+router.post("/teachers/:teacherId/subjects", assignTeacherSubjectsHandler);
+router.delete("/teachers/:teacherId/subjects/:subjectId", removeTeacherSubjectHandler);
+router.delete("/teachers/:teacherId/subjects", clearTeacherSubjectsHandler);
 
 router.post("/auto/schedule", runAutoSchedule);
 router.get("/section/schedule", sectionSchedule);
