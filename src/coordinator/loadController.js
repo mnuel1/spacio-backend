@@ -2176,6 +2176,10 @@ const getAssignmentRecommendations = async (req, res) => {
       ? teacherData.specializations.split(",").map((s) => s.replace(/"/g, "").trim())
       : [];
 
+    // Get teacher's qualified subjects from the new subject-based system
+    const teacherSubjects = await getTeacherSubjects(teacherId);
+    const teacherSubjectIds = teacherSubjects.map(ts => ts.id);
+
     // Parse preferred time
     let preferredTimeStart = null;
     let preferredTimeEnd = null;
@@ -2225,8 +2229,10 @@ const getAssignmentRecommendations = async (req, res) => {
       availableRooms = allRooms?.filter((room) => !bookedRoomIds.has(room.id)) || [];
     }
 
-    // Get recommended subjects based on specialization
+    // Get recommended subjects based on teacher_subjects (new system) or specialization (legacy)
     let recommendedSubjects = [];
+    const usesSubjectReferences = teacherSubjectIds.length > 0;
+
     if (subjectId) {
       const { data: subject } = await supabase
         .from("subjects")
@@ -2235,8 +2241,11 @@ const getAssignmentRecommendations = async (req, res) => {
         .single();
 
       if (subject) {
-        const isRecommended = specializations.includes(subject.specialization?.trim());
-        recommendedSubjects = [{ ...subject, isRecommended }];
+        // Prioritize subject-based matching, fallback to specialization
+        const isRecommended = usesSubjectReferences
+          ? teacherSubjectIds.includes(subject.id)
+          : specializations.includes(subject.specialization?.trim());
+        recommendedSubjects = [{ ...subject, isRecommended, matchedBy: usesSubjectReferences ? 'subject' : 'specialization' }];
       }
     } else {
       const { data: allSubjects } = await supabase
@@ -2244,10 +2253,18 @@ const getAssignmentRecommendations = async (req, res) => {
         .select("*")
         .eq("academic_period_id", currentPeriod?.id || 0);
 
-      recommendedSubjects = allSubjects?.map((subject) => ({
-        ...subject,
-        isRecommended: specializations.includes(subject.specialization?.trim()),
-      })) || [];
+      recommendedSubjects = allSubjects?.map((subject) => {
+        // Prioritize subject-based matching, fallback to specialization
+        const isRecommended = usesSubjectReferences
+          ? teacherSubjectIds.includes(subject.id)
+          : specializations.includes(subject.specialization?.trim());
+
+        return {
+          ...subject,
+          isRecommended,
+          matchedBy: usesSubjectReferences ? 'subject' : 'specialization'
+        };
+      }) || [];
     }
 
     // Calculate recommendations
@@ -2285,7 +2302,10 @@ const getAssignmentRecommendations = async (req, res) => {
         conflictDetails,
       },
       subjects: {
-        specializations,
+        specializations, // Legacy field for backward compatibility
+        teacherSubjects, // New subject-based system with proficiency levels
+        teacherSubjectIds, // IDs only for quick lookup
+        usesSubjectReferences, // Flag to indicate which system is being used
         recommended: recommendedSubjects.filter((s) => s.isRecommended),
         all: recommendedSubjects,
       },
